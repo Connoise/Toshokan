@@ -1,0 +1,1495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<style data-omelette-print-defaults>
+@media print {
+  h1, h2, h3, h4, h5, h6 { break-after: avoid; }
+  figure, table, pre, blockquote, img, svg, tr, [class~="card" i] { break-inside: avoid; }
+  img, svg { max-width: 100%; }
+  p { orphans: 3; widows: 3; }
+}
+</style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Toshokan — Development &amp; Backend Implementation Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&amp;family=Spectral:ital,wght@0,400;0,500;0,600;1,400&amp;family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&amp;display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink:#161A1C; --ink-soft:#2C3438; --body:#3A4247; --muted:#69737A; --faint:#97A0A5;
+    --paper:#FFFFFF; --paper-2:#F4F6F6; --paper-3:#EDF0F0;
+    --line:#E0E4E5; --line-2:#CDD3D4; --rule:#171B1D;
+    --copper:#4F857A; --copper-deep:#3C6B61;
+    --signal:#C57D24; --signal-soft:#FBF1E2;
+    --slate:#7C8A90; --quartz:#7E76A0;
+    --running:#3F8159; --running-soft:#E8F1EB;
+    --error:#A14739; --error-soft:#F8ECEA;
+    --sans:"Hanken Grotesk", "Segoe UI", system-ui, sans-serif;
+    --serif:"Spectral", Georgia, "Times New Roman", serif;
+    --mono:"IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin:0; background:var(--paper-3); color:var(--body);
+    font-family:var(--sans); font-size:15.5px; line-height:1.66;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+
+  .doc {
+    box-sizing:border-box; max-width:8.5in; margin:0 auto; background:var(--paper);
+    padding:0 clamp(22px, 5vw, 0.9in) 110px;
+    box-shadow:0 1px 2px rgba(20,26,28,.05), 0 24px 60px rgba(20,26,28,.10);
+  }
+  .doc-frame { width:100%; border-collapse:collapse; }
+  .doc-frame td { padding:0; }
+  .hdr-space, .ftr-space { display:none; }
+
+  /* ---- type ---- */
+  h1,h2,h3,h4 { color:var(--ink); text-wrap:balance; }
+  p, li { text-wrap:pretty; }
+  p { margin:0 0 14px; }
+  a { color:var(--copper-deep); text-decoration:none; border-bottom:1px solid rgba(79,133,122,.35); }
+  strong { color:var(--ink-soft); font-weight:700; }
+  em { color:var(--ink-soft); }
+
+  .part-tag {
+    font-family:var(--mono); font-size:11px; font-weight:500; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--signal); margin:0 0 6px;
+  }
+  h2.section {
+    font-family:var(--sans); font-weight:800; font-size:25px; line-height:1.18;
+    letter-spacing:-.018em; margin:0 0 4px; padding-top:6px;
+    display:flex; align-items:baseline; gap:14px;
+  }
+  h2.section .num {
+    font-family:var(--mono); font-weight:500; font-size:15px; color:var(--copper);
+    letter-spacing:0; flex-shrink:0; padding-top:3px;
+  }
+  .section-lead { font-size:16px; color:var(--muted); margin:0 0 22px; max-width:62ch; }
+  h3 { font-family:var(--sans); font-weight:700; font-size:17.5px; letter-spacing:-.01em; margin:30px 0 9px; }
+  h4 { font-family:var(--sans); font-weight:700; font-size:13.5px; letter-spacing:.02em; margin:22px 0 7px; color:var(--ink-soft); }
+  .kicker {
+    font-family:var(--mono); font-size:10.5px; font-weight:500; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--faint); margin:0 0 10px;
+  }
+
+  ul, ol { margin:0 0 15px; padding-left:22px; }
+  li { margin:0 0 7px; padding-left:3px; }
+  li::marker { color:var(--slate); }
+  ul.tight li, ol.tight li { margin-bottom:3px; }
+
+  /* ---- section divider ---- */
+  .part {
+    margin:64px 0 30px; padding-top:30px; border-top:2px solid var(--rule);
+  }
+  .part:first-of-type { border-top:none; }
+  .part-head { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:8px; }
+  .part-title { font-family:var(--serif); font-weight:600; font-size:15px; color:var(--ink); letter-spacing:0; }
+  hr.rule { border:none; border-top:1px solid var(--line); margin:34px 0; }
+  hr.rule.soft { border-top:1px solid var(--paper-3); }
+
+  section { scroll-margin-top:20px; }
+  .anchor { display:block; position:relative; top:-8px; visibility:hidden; }
+
+  /* ---- cover ---- */
+  .cover { padding:80px 0 30px; border-bottom:2px solid var(--rule); margin-bottom:8px; }
+  .cover .mark { width:96px; height:96px; object-fit:contain; margin-bottom:30px; }
+  .cover .eyebrow {
+    font-family:var(--mono); font-size:12px; letter-spacing:.22em; text-transform:uppercase;
+    color:var(--signal); margin:0 0 18px;
+  }
+  .cover h1 {
+    font-family:var(--serif); font-weight:600; font-size:46px; line-height:1.06;
+    letter-spacing:-.02em; margin:0 0 16px; color:var(--ink);
+  }
+  .cover h1 .sub { display:block; font-size:25px; color:var(--copper-deep); font-style:italic; font-weight:400; margin-top:10px; letter-spacing:-.01em;}
+  .cover .abstract { font-family:var(--serif); font-size:18px; line-height:1.6; color:var(--ink-soft); max-width:64ch; margin:22px 0 30px; }
+  .cover .meta { display:flex; flex-wrap:wrap; gap:0; margin-top:8px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .cover .meta div { padding:11px 18px; border-right:1px solid var(--line); }
+  .cover .meta div:last-child { border-right:none; }
+  .cover .meta .k { font-family:var(--mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint); margin-bottom:3px; }
+  .cover .meta .v { font-size:13.5px; font-weight:600; color:var(--ink-soft); }
+
+  /* ---- callouts ---- */
+  .callout {
+    border:1px solid var(--line-2); border-radius:12px; padding:16px 18px 16px 18px;
+    margin:20px 0; background:var(--paper-2); position:relative;
+  }
+  .callout .ct {
+    font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.14em; text-transform:uppercase;
+    margin:0 0 7px; display:flex; align-items:center; gap:8px;
+  }
+  .callout p:last-child, .callout ul:last-child, .callout ol:last-child { margin-bottom:0; }
+  .callout.intent { background:var(--signal-soft); border-color:#EAD6B4; }
+  .callout.intent .ct { color:var(--signal); }
+  .callout.gap { background:var(--error-soft); border-color:#EBD2CD; }
+  .callout.gap .ct { color:var(--error); }
+  .callout.note { background:var(--paper-2); border-color:var(--line-2); }
+  .callout.note .ct { color:var(--slate); }
+  .callout.decision { background:#EAF1EF; border-color:#CBE0DA; }
+  .callout.decision .ct { color:var(--copper-deep); }
+  .callout .dot { width:7px; height:7px; border-radius:50%; background:currentColor; flex-shrink:0; }
+
+  /* ---- pills / tags ---- */
+  .pill {
+    display:inline-flex; align-items:center; gap:6px; vertical-align:middle;
+    font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.08em; text-transform:uppercase;
+    padding:2px 8px; border-radius:5px; border:1px solid var(--line-2); background:var(--paper-2); color:var(--muted);
+    white-space:nowrap;
+  }
+  .pill.done { color:var(--running); border-color:#CBE0D2; background:var(--running-soft); }
+  .pill.stub { color:var(--signal); border-color:#EAD6B4; background:var(--signal-soft); }
+  .pill.backend { color:var(--error); border-color:#EBD2CD; background:var(--error-soft); }
+  .pill.local { color:var(--quartz); border-color:#D8D3E6; background:#F1EFF6; }
+
+  /* ---- code ---- */
+  code { font-family:var(--mono); font-size:.86em; background:var(--paper-3); padding:1px 5px; border-radius:4px; color:var(--ink-soft); }
+  pre {
+    font-family:var(--mono); font-size:12.5px; line-height:1.62; color:#E7EBEC;
+    background:#15191C; border-radius:11px; padding:16px 18px; margin:16px 0; overflow-x:auto;
+    border:1px solid #0C0F11;
+  }
+  pre code { background:none; padding:0; color:inherit; font-size:inherit; }
+  pre .c { color:#7D8A8F; } /* comment */
+  pre .k { color:#E2A75A; } /* keyword */
+  pre .s { color:#86C99A; } /* string */
+  pre .t { color:#7FB5DE; } /* type */
+  pre .p { color:#C6B6E6; } /* punctuation-ish / annotation */
+  pre .n { color:#E7EBEC; }
+  .code-cap { font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); margin:-6px 0 14px; }
+
+  /* ---- tables ---- */
+  table.t { width:100%; border-collapse:collapse; margin:16px 0 20px; font-size:13.5px; }
+  table.t caption { caption-side:bottom; font-size:11.5px; color:var(--muted); text-align:left; margin-top:8px; font-style:italic; }
+  table.t th {
+    text-align:left; font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--muted); padding:8px 11px; border-bottom:1.5px solid var(--line-2); vertical-align:bottom;
+  }
+  table.t td { padding:9px 11px; border-bottom:1px solid var(--line); vertical-align:top; color:var(--body); }
+  table.t tr:last-child td { border-bottom:none; }
+  table.t td.mono, table.t th.mono { font-family:var(--mono); font-size:12px; }
+  table.t td code { font-size:11.5px; white-space:nowrap; }
+  table.t tbody tr:nth-child(even) { background:var(--paper-2); }
+
+  /* ---- figures ---- */
+  figure { margin:22px 0 26px; }
+  figure img { width:100%; display:block; border:1px solid var(--line-2); border-radius:12px; box-shadow:0 1px 2px rgba(20,26,28,.05), 0 12px 30px rgba(20,26,28,.07); }
+  figcaption { font-size:12.5px; color:var(--muted); margin-top:10px; padding-left:2px; }
+  figcaption b { color:var(--ink-soft); font-weight:700; }
+
+  /* ---- swatches ---- */
+  .swatches { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:10px; margin:16px 0 22px; }
+  .sw { border:1px solid var(--line); border-radius:9px; overflow:hidden; }
+  .sw .chip { height:42px; }
+  .sw .lab { padding:7px 9px; }
+  .sw .lab .nm { font-size:12px; font-weight:700; color:var(--ink-soft); }
+  .sw .lab .hx { font-family:var(--mono); font-size:10.5px; color:var(--muted); }
+
+  /* ---- kbd ---- */
+  kbd {
+    font-family:var(--mono); font-size:11px; font-weight:600; color:var(--ink-soft);
+    background:var(--paper-2); border:1px solid var(--line-2); border-bottom-width:2px; border-radius:5px; padding:1px 6px;
+  }
+
+  /* ---- def grid ---- */
+  .defs { display:grid; grid-template-columns:max-content 1fr; gap:6px 18px; margin:14px 0 20px; font-size:14px; }
+  .defs dt { font-family:var(--mono); font-size:12px; color:var(--copper-deep); font-weight:500; }
+  .defs dd { margin:0; color:var(--body); }
+
+  /* ---- toc ---- */
+  .toc { columns:2; column-gap:36px; margin:18px 0 8px; }
+  .toc ol { list-style:none; padding:0; margin:0; }
+  .toc li { margin:0 0 4px; break-inside:avoid; font-size:13.5px; }
+  .toc a { border:none; color:var(--body); display:flex; gap:9px; align-items:baseline; }
+  .toc a:hover { color:var(--copper-deep); }
+  .toc .tn { font-family:var(--mono); font-size:11px; color:var(--faint); min-width:24px; }
+  .toc .tg { font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--signal); margin:14px 0 6px; }
+
+  /* ---- misc ---- */
+  .lede-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:16px 0 20px; }
+  .card { border:1px solid var(--line); border-radius:11px; padding:15px 16px; background:var(--paper); }
+  .card h4 { margin:0 0 6px; }
+  .card p { font-size:13.5px; margin:0; color:var(--body); }
+  .flow { font-family:var(--mono); font-size:12px; color:var(--ink-soft); background:var(--paper-2); border:1px solid var(--line); border-radius:9px; padding:13px 15px; margin:16px 0; line-height:1.9; }
+  .flow .ar { color:var(--copper); }
+  .mut { color:var(--muted); }
+  .sc { font-variant-caps:all-small-caps; letter-spacing:.04em; }
+
+  @page { size: letter; margin: 0; }
+  @media print {
+    html { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    html, body { margin:0; padding:0; background:#fff; }
+    .doc { max-width:none !important; margin:0 !important; padding:0 0.7in !important; box-shadow:none !important; }
+    .hdr-space, .ftr-space { display:table-cell; height:0.7in; }
+    h1,h2,h3,h4 { break-after:avoid; }
+    figure, pre, blockquote, table, tr, .callout, .card, .sw, .cover .meta { break-inside:avoid; }
+    .part { break-before:auto; }
+    p, li { orphans:3; widows:3; }
+    .screen-only { display:none !important; }
+    .toc { columns:2; }
+  }
+  @media (max-width:680px){ .toc, .lede-grid { columns:1; grid-template-columns:1fr; } .cover h1 { font-size:34px; } }
+</style>
+</head>
+<body>
+<main class="doc">
+  <table class="doc-frame" role="presentation">
+    <thead><tr><td class="hdr-space"></td></tr></thead>
+    <tbody><tr><td>
+
+    <!-- ========================= COVER ========================= -->
+    <header class="cover">
+      <img class="mark" src="toshokan/assets/rail-emblem.png" alt="Toshokan emblem" />
+      <div class="eyebrow">Development &amp; Implementation Guide</div>
+      <h1>Toshokan<span class="sub">A local-first launcher for a sprawling workspace — interface spec &amp; backend plan</span></h1>
+      <p class="abstract">This document is the single source of truth for building Toshokan beyond its interface prototype. It explains what the product is and why, documents every screen and component of the existing UI, codifies the “Digital Strata” design system, and lays out a phased plan — with concrete IPC contracts and data schemas — for implementing the local Tauri backend that brings it to life.</p>
+      <div class="meta">
+        <div><div class="k">Prototype</div><div class="v">v0.4.0 · React + Babel</div></div>
+        <div><div class="k">Target stack</div><div class="v">Tauri (Rust) + React</div></div>
+        <div><div class="k">Platform</div><div class="v">Windows 11 desktop</div></div>
+        <div><div class="k">Data</div><div class="v">100% local</div></div>
+        <div><div class="k">Revised</div><div class="v">June 24, 2026</div></div>
+      </div>
+    </header>
+
+    <!-- ========================= READING GUIDE ========================= -->
+    <section>
+      <div class="callout note" style="margin-top:26px;">
+        <p class="ct"><span class="dot"></span>How to read this document</p>
+        <p>The files in the prototype bundle are <strong>design references built in HTML/React</strong> — a high-fidelity mock of the intended look and behavior, <em>not</em> production code to ship. The task is to <strong>recreate this interface inside a Tauri application</strong> and build the local backend described in Part&nbsp;IV. Recreate the UI faithfully (the design is hi-fi: final colors, type, spacing, and interactions are specified here), using the target project’s own component conventions where they exist.</p>
+        <p style="margin-top:10px;">Throughout, coloured callouts flag the kind of information:</p>
+        <ul class="tight" style="margin-top:8px;">
+          <li><span class="pill" style="color:var(--signal);border-color:#EAD6B4;background:var(--signal-soft);">Design intent</span> &nbsp;why something looks or behaves the way it does — preserve the intent, not necessarily the pixels.</li>
+          <li><span class="pill backend">Backend gap</span> &nbsp;a place where the prototype fakes or stubs behavior that real backend work must replace.</li>
+          <li><span class="pill decision" style="color:var(--copper-deep);border-color:#CBE0DA;background:#EAF1EF;">Decision</span> &nbsp;an assumption or recommendation made in this document that the team can override.</li>
+        </ul>
+        <p style="margin-top:10px;">Status tags label features: <span class="pill done">Prototyped</span> rendered &amp; interactive in the mock · <span class="pill stub">Stubbed</span> visible but wired to fake data/toasts · <span class="pill backend">Backend needed</span> requires real OS/process/file work.</p>
+      </div>
+    </section>
+
+    <!-- ========================= CONTENTS ========================= -->
+    <section>
+      <h2 class="section" style="font-size:20px;"><span class="num">·</span>Contents</h2>
+      <nav class="toc">
+        <ol>
+          <li class="tg">Part I — Product</li>
+          <li><a href="#s1"><span class="tn">1</span><span>Overview &amp; goals</span></a></li>
+          <li><a href="#s2"><span class="tn">2</span><span>Core concepts (domain model)</span></a></li>
+          <li class="tg">Part II — Design system</li>
+          <li><a href="#s3"><span class="tn">3</span><span>Digital Strata — language &amp; tokens</span></a></li>
+          <li><a href="#s4"><span class="tn">4</span><span>Components, iconography &amp; motion</span></a></li>
+          <li class="tg">Part III — Interface</li>
+          <li><a href="#s5"><span class="tn">5</span><span>Shell &amp; global chrome</span></a></li>
+          <li><a href="#s6"><span class="tn">6</span><span>Projects (catalog)</span></a></li>
+          <li><a href="#s7"><span class="tn">7</span><span>Description (project detail)</span></a></li>
+          <li><a href="#s8"><span class="tn">8</span><span>Services</span></a></li>
+          <li><a href="#s9"><span class="tn">9</span><span>Settings</span></a></li>
+          <li><a href="#s10"><span class="tn">10</span><span>Prototype vs. backend — gap map</span></a></li>
+          <li class="tg">Part IV — Backend plan</li>
+          <li><a href="#s11"><span class="tn">11</span><span>Architecture (Tauri)</span></a></li>
+          <li><a href="#s12"><span class="tn">12</span><span>Data model &amp; persistence</span></a></li>
+          <li><a href="#s13"><span class="tn">13</span><span>Capability specs &amp; IPC contracts</span></a></li>
+          <li><a href="#s14"><span class="tn">14</span><span>Phased roadmap</span></a></li>
+          <li><a href="#s15"><span class="tn">15</span><span>Error handling &amp; edge cases</span></a></li>
+          <li><a href="#s16"><span class="tn">16</span><span>Testing strategy</span></a></li>
+          <li><a href="#s17"><span class="tn">17</span><span>Packaging &amp; distribution</span></a></li>
+          <li><a href="#s18"><span class="tn">18</span><span>Asset checklist &amp; file reference</span></a></li>
+        </ol>
+      </nav>
+    </section>
+
+    <!-- ===================================================================
+         PART I — PRODUCT
+    ==================================================================== -->
+    <div class="part">
+      <div class="part-head"><span class="part-tag">Part I</span><span class="part-title">Product</span></div>
+    </div>
+
+    <!-- ====== 1. OVERVIEW ====== -->
+    <section>
+      <span class="anchor" id="s1"></span>
+      <p class="part-tag">Part I — Product</p>
+      <h2 class="section"><span class="num">01</span>Overview &amp; goals</h2>
+      <p class="section-lead">Toshokan (図書館, “library”) is a local-first desktop launcher and control room for a developer’s personal workspace — the one place to find, understand, launch, and monitor every project on the machine.</p>
+
+      <h3>The problem</h3>
+      <p>A working developer accumulates many independent local projects — apps, daemons, experiments — each with its own stack, run command, dev server, notes, and git state. They sprawl across folders. Knowing <em>what exists</em>, <em>what’s running</em>, <em>how to start a thing</em>, and <em>where its docs live</em> means juggling a file explorer, several terminals, a notes app, and memory. Toshokan collapses that into a single, calm, native window.</p>
+
+      <h3>Goals</h3>
+      <ul>
+        <li><strong>One catalog of everything.</strong> Scan configured workspace directories and present every project as a browsable “specimen,” with identity, tech stack, path, git branch, and last-opened time.</li>
+        <li><strong>Understand a project at a glance.</strong> Surface its README / linked Obsidian note, its directory structure, and its configured services without opening an editor.</li>
+        <li><strong>Launch &amp; monitor services.</strong> Start, stop, and restart the long-running processes a project needs (dev servers, daemons), and watch their status, port, PID, uptime, memory, and log output live.</li>
+        <li><strong>Stay out of the way.</strong> Fast keyboard-driven navigation, an instrument-like aesthetic, and zero ceremony.</li>
+        <li><strong>Local &amp; private by construction.</strong> No accounts, no cloud, no telemetry. Everything Toshokan knows comes from the local filesystem and the processes it launches.</li>
+      </ul>
+
+      <div class="callout intent">
+        <p class="ct"><span class="dot"></span>Design intent — “a library, not a dashboard”</p>
+        <p>The product is framed as a <em>reference library of specimens</em>, not an ops dashboard. Projects are catalogued and inspected like mineral samples (hence the octagonal “specimen frames,” the “cross-section” directory view, and the geological palette). This framing should survive into the real app: calm, archival, tactile — never busy or alarmist.</p>
+      </div>
+
+      <h3>Non-goals</h3>
+      <ul class="tight">
+        <li>Not an editor or IDE — it <em>launches</em> editors/terminals, it doesn’t replace them.</li>
+        <li>Not a cloud or team tool — single machine, single user, no sync server (a personal tailnet is the most “networked” it gets).</li>
+        <li>Not a deployment / CI system — “services” are local processes, not remote deployments.</li>
+        <li>Not a package manager or version-control client — it <em>reads</em> git state and <em>runs</em> configured commands; it doesn’t commit, branch, or install.</li>
+      </ul>
+
+      <h3>Platform &amp; stack</h3>
+      <div class="defs">
+        <dt>Shell</dt><dd>Tauri (Rust core + system WebView). Chosen for a small native footprint, first-class OS/process/filesystem access from Rust, and a webview UI that maps directly onto the existing React prototype.</dd>
+        <dt>Frontend</dt><dd>React (the prototype is React 18 + Babel; production should compile with Vite/TS — see §11.4).</dd>
+        <dt>Primary target</dt><dd>Windows 11 desktop. The prototype reproduces the Win11 title bar; the real app uses Tauri’s native window decorations.</dd>
+        <dt>Later</dt><dd>An Android path is desirable long-term (Tauri 2 mobile), but is explicitly out of scope for v1 — see §17.</dd>
+      </div>
+
+      <div class="callout decision">
+        <p class="ct"><span class="dot"></span>Decision — Tauri is assumed</p>
+        <p>The prototype’s Windows chrome, the <code>src-tauri/</code> directory and <code>tauri.conf.json</code> visible in the sample tree, and the “all data is local” framing all point to Tauri. This guide is written for that target. If the team prefers Electron, the screen specs in Part&nbsp;III are unchanged; only the backend mechanics in Part&nbsp;IV (Rust commands → Node main-process handlers) need translating.</p>
+      </div>
+    </section>
+
+    <!-- ====== 2. DOMAIN MODEL ====== -->
+    <section>
+      <span class="anchor" id="s2"></span>
+      <p class="part-tag">Part I — Product</p>
+      <h2 class="section"><span class="num">02</span>Core concepts (domain model)</h2>
+      <p class="section-lead">Six entities make up Toshokan’s mental model. The prototype’s sample data in <code>toshokan/data.js</code> is the canonical shape for each; the backend produces these same shapes from the filesystem.</p>
+
+      <div class="flow">
+        Workspace&nbsp;Directory <span class="ar">──scans──▶</span> Project <span class="ar">──has 0..n──▶</span> Service<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Project <span class="ar">──has 0..n──▶</span> Subproject <span class="mut">(a nested Project)</span><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Project <span class="ar">──links 0..1──▶</span> Summary&nbsp;Note <span class="mut">(Obsidian markdown)</span>
+      </div>
+
+      <table class="t">
+        <thead><tr><th style="width:22%;">Entity</th><th>What it is</th><th style="width:30%;">Source of truth</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Workspace Directory</strong></td><td>A root folder the user registers for Toshokan to watch (e.g. <code>~/Workspace</code>). Has an <em>auto-scan</em> flag.</td><td class="mono">User config (Settings)</td></tr>
+          <tr><td><strong>Project</strong></td><td>A discovered folder treated as one project. Carries identity (name, description), tech tags, absolute path, git branch &amp; repo state, last-opened time, and an optional linked summary.</td><td class="mono">Filesystem + git + config files</td></tr>
+          <tr><td><strong>Subproject</strong></td><td>A project nested inside another (e.g. an editor extension inside its host app). Structurally a Project; listed under its parent.</td><td class="mono">Filesystem (nested)</td></tr>
+          <tr><td><strong>Service</strong></td><td>A runnable, usually long-lived process a project defines (dev server, daemon, viewer). Has a launch command, working dir, optional port, and a live lifecycle state.</td><td class="mono">Project config + live process</td></tr>
+          <tr><td><strong>Summary&nbsp;Note</strong></td><td>A markdown note describing the project — its README and/or a matching note in the user’s Obsidian vault — rendered read-only on the detail page.</td><td class="mono">README.md / Obsidian vault</td></tr>
+          <tr><td><strong>Tree&nbsp;Node</strong></td><td>A file or directory entry in a project’s directory cross-section, with size, modified time, and (for files) an optional preview.</td><td class="mono">Filesystem</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Project shape (from <code>data.js</code>)</h3>
+      <p>The interface already consumes a fully-specified Project object. The backend must reproduce this shape exactly so the UI needs no changes:</p>
+<pre><code><span class="c">// window.TSK_PROJECTS[n] — the contract the UI already depends on</span>
+{
+  id: <span class="s">"idolmancer"</span>,            <span class="c">// stable slug (folder-derived)</span>
+  name: <span class="s">"Idolmancer"</span>,
+  desc: <span class="s">"Music composition &amp; theory workbench"</span>,
+  tech: [<span class="s">"TypeScript"</span>, <span class="s">"React"</span>, <span class="s">"Tauri"</span>],   <span class="c">// detected stack tags</span>
+  path: <span class="s">"~/Workspace/Idolmancer"</span>,
+  lastOpened: <span class="s">"Today, 10:42 AM"</span>,   <span class="c">// humanised; see §12.2 note on raw timestamps</span>
+  sortKey: <span class="n">0</span>,                       <span class="c">// recency rank for "Last opened" sort</span>
+  branch: <span class="s">"main"</span>,                  <span class="c">// current git branch</span>
+  repo: <span class="s">"Local only"</span>,             <span class="c">// remote state label</span>
+  serviceCount: <span class="n">1</span>,
+  subprojects: [{ name, desc, lastOpened }],
+  service: { label, url },          <span class="c">// optional: a headline running service</span>
+  summary: {                        <span class="c">// optional linked note</span>
+    source: <span class="s">"README.md"</span>, updated: <span class="s">"Today, 9:15 AM"</span>,
+    paragraphs: [<span class="s">"…"</span>]
+  }
+}</code></pre>
+      <p class="code-cap">Full TypeScript interfaces for every entity are given in §12.</p>
+
+      <div class="callout note">
+        <p class="ct"><span class="dot"></span>Sample dataset</p>
+        <p>The prototype ships seven real-feeling projects — <em>Idolmancer, Plastiglom, Frog&nbsp;Budget, Kani-miso, Jagaimo, Inventorois,</em> and <em>Sando</em> — and nine services across them. Treat these as fixtures for development and visual QA; the backend replaces them with live scan results. The dataset deliberately covers the awkward cases: a project with a nested subproject, projects with 0/1/2 services, and services in every lifecycle state (running, starting, stopped, failed).</p>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         PART II — DESIGN SYSTEM
+    ==================================================================== -->
+    <div class="part">
+      <div class="part-head"><span class="part-tag">Part II</span><span class="part-title">Design system — “Digital Strata”</span></div>
+    </div>
+
+    <!-- ====== 3. TOKENS ====== -->
+    <section>
+      <span class="anchor" id="s3"></span>
+      <p class="part-tag">Part II — Design system</p>
+      <h2 class="section"><span class="num">03</span>Digital Strata — language &amp; tokens</h2>
+      <p class="section-lead">A calm, instrument-grade visual language built on a geological metaphor: layered stone surfaces, mineral accent colours, engraved marks, and exposed “seams.” All tokens live in <code>toshokan/tokens.css</code> as CSS custom properties; recreate them verbatim.</p>
+
+      <h3>The two themes</h3>
+      <p>Every colour is defined twice — <strong>Lithic Light</strong> (default, <code>:root</code>) and <strong>Basalt Dark</strong> (<code>[data-theme="dark"]</code>). The app toggles a single <code>data-theme</code> attribute on the document element; nothing else changes. Honour the user’s OS preference on first run, then persist their choice.</p>
+
+      <div class="lede-grid">
+        <figure style="margin:0;"><img src="toshokan/doc-assets/01-projects-grid.png" alt="Lithic Light theme" /><figcaption><b>Lithic Light</b> — warm-grey stone, near-white surfaces.</figcaption></figure>
+        <figure style="margin:0;"><img src="toshokan/doc-assets/05-projects-dark.png" alt="Basalt Dark theme" /><figcaption><b>Basalt Dark</b> — smoked basalt, the same structure inverted.</figcaption></figure>
+      </div>
+
+      <h3>Core palette — Lithic Light</h3>
+      <div class="swatches">
+        <div class="sw"><div class="chip" style="background:#F1F3F3;border-bottom:1px solid var(--line);"></div><div class="lab"><div class="nm">bg-base</div><div class="hx">#F1F3F3</div></div></div>
+        <div class="sw"><div class="chip" style="background:#E7EAEB;"></div><div class="lab"><div class="nm">bg-substrate</div><div class="hx">#E7EAEB</div></div></div>
+        <div class="sw"><div class="chip" style="background:#F8F9F7;border-bottom:1px solid var(--line);"></div><div class="lab"><div class="nm">surface</div><div class="hx">#F8F9F7</div></div></div>
+        <div class="sw"><div class="chip" style="background:#DDE2E3;"></div><div class="lab"><div class="nm">surface-recessed</div><div class="hx">#DDE2E3</div></div></div>
+        <div class="sw"><div class="chip" style="background:#171B1D;"></div><div class="lab"><div class="nm">text-primary</div><div class="hx">#171B1D</div></div></div>
+        <div class="sw"><div class="chip" style="background:#596268;"></div><div class="lab"><div class="nm">text-secondary</div><div class="hx">#596268</div></div></div>
+        <div class="sw"><div class="chip" style="background:#F0A84B;"></div><div class="lab"><div class="nm">signal</div><div class="hx">#F0A84B</div></div></div>
+        <div class="sw"><div class="chip" style="background:#57976C;"></div><div class="lab"><div class="nm">running</div><div class="hx">#57976C</div></div></div>
+        <div class="sw"><div class="chip" style="background:#A85348;"></div><div class="lab"><div class="nm">error</div><div class="hx">#A85348</div></div></div>
+        <div class="sw"><div class="chip" style="background:#709B93;"></div><div class="lab"><div class="nm">copper</div><div class="hx">#709B93</div></div></div>
+        <div class="sw"><div class="chip" style="background:#87949A;"></div><div class="lab"><div class="nm">slate</div><div class="hx">#87949A</div></div></div>
+        <div class="sw"><div class="chip" style="background:#23282B;"></div><div class="lab"><div class="nm">basalt (actions)</div><div class="hx">#23282B</div></div></div>
+      </div>
+
+      <h3>Full token reference</h3>
+      <table class="t">
+        <thead><tr><th>Token</th><th class="mono">Lithic Light</th><th class="mono">Basalt Dark</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">--bg-base</td><td class="mono">#F1F3F3</td><td class="mono">#0D1012</td><td>App background</td></tr>
+          <tr><td class="mono">--bg-substrate</td><td class="mono">#E7EAEB</td><td class="mono">#12171A</td><td>Rail, header, footer, recessed bands</td></tr>
+          <tr><td class="mono">--surface</td><td class="mono">#F8F9F7</td><td class="mono">#181E21</td><td>Cards, tiles, panels</td></tr>
+          <tr><td class="mono">--surface-recessed</td><td class="mono">#DDE2E3</td><td class="mono">#11161A</td><td>Insets, hover wells, segmented track</td></tr>
+          <tr><td class="mono">--line</td><td class="mono">#C1C8CA</td><td class="mono">#354046</td><td>Solid hairlines, dashed slot borders</td></tr>
+          <tr><td class="mono">--line-soft</td><td class="mono">rgba(193,200,202,.5)</td><td class="mono">rgba(53,64,70,.6)</td><td>Most borders &amp; dividers</td></tr>
+          <tr><td class="mono">--text-primary</td><td class="mono">#171B1D</td><td class="mono">#EEF1F1</td><td>Headings, key values</td></tr>
+          <tr><td class="mono">--text-secondary</td><td class="mono">#596268</td><td class="mono">#ABB4B8</td><td>Body, labels</td></tr>
+          <tr><td class="mono">--text-muted</td><td class="mono">#818B90</td><td class="mono">#778288</td><td>Meta, timestamps, placeholders</td></tr>
+          <tr><td class="mono">--signal</td><td class="mono">#F0A84B</td><td class="mono">#FFB45A</td><td>Selection, focus, “signal” accent (amber)</td></tr>
+          <tr><td class="mono">--running</td><td class="mono">#57976C</td><td class="mono">#69C184</td><td>Running / healthy state (green)</td></tr>
+          <tr><td class="mono">--warning</td><td class="mono">#C47D38</td><td class="mono">#E29A49</td><td>High memory, caution</td></tr>
+          <tr><td class="mono">--error</td><td class="mono">#A85348</td><td class="mono">#D5685B</td><td>Failed state, destructive</td></tr>
+          <tr><td class="mono">--copper</td><td class="mono">#709B93</td><td class="mono">#7AB2A6</td><td>Documentation “seam,” secondary accent</td></tr>
+          <tr><td class="mono">--slate</td><td class="mono">#87949A</td><td class="mono">#718087</td><td>Directory icons, neutral nodes</td></tr>
+          <tr><td class="mono">--quartz</td><td class="mono">#C7C1D7</td><td class="mono">#A9A2C5</td><td>Tertiary accent (violet-grey)</td></tr>
+          <tr><td class="mono">--basalt</td><td class="mono">#23282B</td><td class="mono">#2C353A</td><td>Primary button fill, toast, console</td></tr>
+        </tbody>
+        <caption>Soft/“-soft” tints (e.g. <code>--signal-soft</code>, <code>--running-soft</code>, <code>--error-soft</code>) are low-alpha washes of each accent used for selected rows and status pills. See <code>tokens.css</code> for exact alpha values.</caption>
+      </table>
+
+      <h3>Typography</h3>
+      <div class="defs">
+        <dt>--font-sans</dt><dd><strong>Hanken Grotesk</strong> (400/500/600/700) → fall back to Segoe UI, system-ui. All UI text, headings, labels, body.</dd>
+        <dt>--font-mono</dt><dd><strong>IBM Plex Mono</strong> (400/500, + italic) → Cascadia Mono, Consolas. Paths, ports, PIDs, commands, code, status labels, and the <code>.micro</code> technical micro-labels.</dd>
+      </div>
+      <table class="t">
+        <thead><tr><th>Role</th><th>Family</th><th>Size / weight</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Page title (H1 in header)</td><td>Sans</td><td>25px / 700</td><td>letter-spacing −0.02em</td></tr>
+          <tr><td>Section / card heading</td><td>Sans</td><td>23–16.5px / 700</td><td>tight tracking</td></tr>
+          <tr><td>Tile / row title</td><td>Sans</td><td>16.5–14px / 700</td><td>—</td></tr>
+          <tr><td>Body &amp; descriptions</td><td>Sans</td><td>13.5–14px / 400–500</td><td><code>text-wrap:pretty</code></td></tr>
+          <tr><td>Micro-label (<code>.micro</code>)</td><td>Mono</td><td>10px / 500</td><td>uppercase, letter-spacing 0.08em, muted</td></tr>
+          <tr><td>Paths, ports, commands, logs</td><td>Mono</td><td>11–12.5px / 400</td><td>commands rendered <em>italic</em></td></tr>
+        </tbody>
+      </table>
+
+      <h3>Geometry, elevation &amp; texture</h3>
+      <table class="t">
+        <thead><tr><th>Token</th><th class="mono">Value</th><th>Used for</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">--r-panel</td><td class="mono">16px</td><td>Large panels, cards, sections</td></tr>
+          <tr><td class="mono">--r-tile</td><td class="mono">14px</td><td>Project tiles (top-right corner clipped to 4px — the “specimen cut”)</td></tr>
+          <tr><td class="mono">--r-control</td><td class="mono">8px</td><td>Buttons, inputs, selects</td></tr>
+          <tr><td class="mono">--r-chip</td><td class="mono">6px</td><td>Chips, pills, tags</td></tr>
+          <tr><td class="mono">--shadow-tile</td><td class="mono">2-layer, ~6% ink</td><td>Resting cards</td></tr>
+          <tr><td class="mono">--shadow-raised</td><td class="mono">2-layer, ~9% ink</td><td>Hover / selected cards</td></tr>
+          <tr><td class="mono">--shadow-chip</td><td class="mono">inset 0 1px 0 white/65%</td><td>Top-edge highlight on chips (the “polished stone” sheen)</td></tr>
+          <tr><td class="mono">--placeholder-stripe</td><td class="mono">−45° repeating lines</td><td>Asset-slot fill (see §4)</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout intent">
+        <p class="ct"><span class="dot"></span>Design intent — the “specimen cut” &amp; exposed seams</p>
+        <p>Two recurring motifs carry the geology metaphor: project cards clip their <em>top-right</em> corner to a hard 4px radius (a cut facet on an otherwise rounded tile), and documentation panels expose a thin copper “seam” gradient along their top edge. Both are quiet — easy to miss, but they make the surface feel cut and layered rather than flat. Keep them.</p>
+      </div>
+    </section>
+
+    <!-- ====== 4. COMPONENTS / ICONS / MOTION ====== -->
+    <section>
+      <span class="anchor" id="s4"></span>
+      <p class="part-tag">Part II — Design system</p>
+      <h2 class="section"><span class="num">04</span>Components, iconography &amp; motion</h2>
+      <p class="section-lead">Shared primitives live in <code>toshokan/shared.jsx</code>. Recreate them as the component library; every screen is assembled from these.</p>
+
+      <h3>Shared component inventory</h3>
+      <table class="t">
+        <thead><tr><th>Component</th><th>Purpose &amp; key props</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">Icon</td><td>Geometric line icon on a 24px grid. <code>name, size=16, stroke=1.75</code>. ~30 icons (see below).</td></tr>
+          <tr><td class="mono">Node</td><td>The “mineral node” status dot. <code>state</code> (running/starting/stopped/failed/signal/neutral), <code>size</code>, <code>pulse</code>. Stopped renders hollow; running/starting get a soft halo ring.</td></tr>
+          <tr><td class="mono">SpecimenFrame</td><td>Octagonal project-icon holder. <code>size, label, selected</code>. Renders the project’s artwork via blend-mode (see intent below); falls back to a striped octagon placeholder when no art is mapped.</td></tr>
+          <tr><td class="mono">BrandMark</td><td>Toshokan app logo (fox-with-book), light/dark variants.</td></tr>
+          <tr><td class="mono">Slot</td><td>Dashed, striped placeholder for an unfinished asset. Tagged <code>data-asset-slot="…"</code> for discovery.</td></tr>
+          <tr><td class="mono">TechChip / PathChip / StatusChip</td><td>Text-only stack tag · mono path (optionally copyable) · mono uppercase status label with a leading Node.</td></tr>
+          <tr><td class="mono">PrimaryBtn / SecondaryBtn / IconBtn</td><td>Basalt-filled primary (lifts on hover), hairline secondary, square icon button (supports <code>active</code> + <code>disabled</code>).</td></tr>
+          <tr><td class="mono">Toast</td><td>Transient bottom-centre basalt pill with a signal node. Auto-dismiss ~2.4s.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Iconography</h3>
+      <p>A single hand-built set, all on a 24px grid, <code>fill:none; stroke:currentColor; stroke-width≈1.75; round caps/joins</code>. Names available: <span class="mono" style="font-size:12px;">grid, rows, folder, file, image, pulse, search, sliders, play, stop, restart, dots, chevR, chevD, external, terminal, book, branch, copy, clock, refresh, layers, download, trash, collapse, plus, gear</span>. Keep them geometric and uniform-weight — no filled or duotone icons.</p>
+
+      <h3>State system — the “mineral node”</h3>
+      <table class="t">
+        <thead><tr><th>State</th><th>Node</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pill done">running</span></td><td>Solid green + soft halo</td><td>Healthy service / project with a live service</td></tr>
+          <tr><td><span class="pill stub">starting</span></td><td>Solid amber + halo, <em>pulsing</em></td><td>Service spinning up; rows also show a sweeping top line</td></tr>
+          <tr><td><span class="pill">stopped</span></td><td>Hollow ring (line colour)</td><td>Configured but not running</td></tr>
+          <tr><td><span class="pill backend">failed</span></td><td>Solid red</td><td>Exited non-zero; row gets a red left-edge + error banner</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Motion</h3>
+      <ul>
+        <li><strong>Hover lifts</strong> — cards/tiles translateY(−2px) with a shadow swap, ~150ms ease.</li>
+        <li><strong>Pulse</strong> (<code>tsk-pulse</code>, 2.2s) — opacity breathing on starting/active nodes.</li>
+        <li><strong>Starting sweep</strong> (<code>tsk-starting-sweep</code>, 1.8s linear) — an amber gradient slides across the top of a starting service row.</li>
+        <li><strong>Theme flip</strong> — on theme change the app adds <code>.tsk-theme-switching</code> for ~80ms which sets <code>transition:none</code> everywhere, so all surfaces snap to the new palette atomically (a half-finished cross-fade reads as a bug). Reproduce this.</li>
+        <li><strong>Reduced motion</strong> — <code>@media (prefers-reduced-motion: reduce)</code> disables all animation/transition. Required.</li>
+      </ul>
+
+      <div class="callout intent">
+        <p class="ct"><span class="dot"></span>Design intent — icons rendered with blend modes, not backplates</p>
+        <p>Project &amp; brand artwork render with <code>mix-blend-mode: multiply</code> (light theme) / <code>screen</code> (dark theme) over an octagonal frame. This lets the glass “plaque” adopt whatever surface sits beneath it — including the amber tint of a <em>selected</em> card — so an icon reads as engraved into the stone rather than pasted on as a white square. There is intentionally <strong>no separate selected/unselected icon backplate</strong>; selection adds a signal-coloured drop-shadow glow instead. Preserve the blend approach when wiring real icons.</p>
+      </div>
+      <div class="callout note">
+        <p class="ct"><span class="dot"></span>Asset pipeline</p>
+        <p>Icons are 512px masters at <code>toshokan/assets/icon-&lt;id&gt;.png</code> with <code>-dark</code> variants generated by a <em>saturation-gated lightness inversion</em> (neutral plaque/strokes invert for dark mode; saturated art keeps its hue). The full manifest, sizes, and remaining gaps are in <code>toshokan/ASSETS.md</code> — summarised in §18.</p>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         PART III — INTERFACE
+    ==================================================================== -->
+    <div class="part">
+      <div class="part-head"><span class="part-tag">Part III</span><span class="part-title">Interface — screens, components &amp; behavior</span></div>
+    </div>
+
+    <!-- ====== 5. SHELL ====== -->
+    <section>
+      <span class="anchor" id="s5"></span>
+      <p class="part-tag">Part III — Interface</p>
+      <h2 class="section"><span class="num">05</span>Shell &amp; global chrome</h2>
+      <p class="section-lead">A fixed full-height frame wraps four interchangeable pages. From top to bottom: title bar, then a row of [navigation rail | (context header · page · status strip)]. The shell lives in <code>toshokan/app.jsx</code>.</p>
+
+      <h3>5.1 Title bar <span class="pill stub">Stubbed</span></h3>
+      <p>A 36px Windows-11 caption bar: brand mark + “Toshokan” at left, and minimize / maximize / close buttons at right (close hovers to <code>#C42B1C</code>). It is a faithful mock of OS chrome.</p>
+      <div class="callout gap">
+        <p class="ct"><span class="dot"></span>Backend gap — use the real window</p>
+        <p>Do not ship the painted caption buttons. Use Tauri’s window decorations, or a custom titlebar wired to <code>appWindow.minimize() / toggleMaximize() / close()</code> with a <code>data-tauri-drag-region</code> drag zone. The brand mark + title can stay as a custom titlebar if the team wants the look.</p>
+      </div>
+
+      <h3>5.2 Navigation rail <span class="pill done">Prototyped</span></h3>
+      <p>196px fixed left column on the substrate. Four tabs — <strong>Projects</strong> (grid icon), <strong>Description</strong> (book), <strong>Services</strong> (pulse), <strong>Settings</strong> (gear). The active tab becomes a raised surface tab with rounded left corners, a bold label, and an amber illuminated seam marker down its left edge. <em>Description</em> shows a small signal node badge when a project is selected. At the rail’s base sits the engraved shield emblem (toggleable; see Settings).</p>
+
+      <h3>5.3 Context header <span class="pill done">Prototyped</span> <span class="pill stub">parts stubbed</span></h3>
+      <ul>
+        <li><strong>Page title</strong> “Toshokan” + a contextual subtitle (“Project Catalog,” “Description,” “Services,” “Settings”).</li>
+        <li><strong>Workspace-root selector</strong> — a <code>&lt;select&gt;</code> over <code>~/Workspace</code> / <code>~/Experiments</code> / <code>~/Archive</code>. <span class="pill stub">Stubbed</span> — should list the user’s registered directories (§9) and re-scope the catalog.</li>
+        <li><strong>Search / command field</strong> — placeholder adapts per page (“Search projects or run command…” vs. “…services or filter…”). Focused with <kbd>Ctrl</kbd>+<kbd>K</kbd>. Currently filters the visible list; the “run command” half is aspirational (a command palette — see §14, Phase 4).</li>
+        <li><strong>Local status chip</strong>, <strong>“N Services Active” button</strong> (jumps to Services), and a sliders icon button.</li>
+      </ul>
+
+      <h3>5.4 Status strip <span class="pill done">Prototyped</span></h3>
+      <p>A 1-line footer on the substrate: Workspace Root · Active Services · Last Refresh · “All data is local.” Values are live where they can be (active-service count is derived from state); <em>Last Refresh</em> is static and should reflect the last scan time.</p>
+
+      <h3>5.5 Global behavior</h3>
+      <table class="t">
+        <thead><tr><th>Shortcut / event</th><th>Behavior</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd></td><td>Focus the search field</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>4</kbd></td><td>Switch to Projects / Description / Services / Settings</td></tr>
+          <tr><td>Toast</td><td>Transient confirmation for actions; auto-dismiss ~2.4s. Many actions currently <em>only</em> raise a toast (“… — wiring pending backend”).</td></tr>
+          <tr><td>Theme / density / emblem</td><td>Held in app state via a tweaks hook; persisted to <code>localStorage</code> in the prototype. Production should persist to the config file (§12.8).</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ====== 6. PROJECTS ====== -->
+    <section>
+      <span class="anchor" id="s6"></span>
+      <p class="part-tag">Part III — Interface</p>
+      <h2 class="section"><span class="num">06</span>Projects — the catalog</h2>
+      <p class="section-lead">The home screen. A featured “launch band” for the current selection, then the full catalog as a card grid or a dense list. Source: <code>toshokan/page-projects.jsx</code>.</p>
+
+      <figure>
+        <img src="toshokan/doc-assets/01-projects-grid.png" alt="Projects catalog, grid view" />
+        <figcaption><b>Projects — grid view (Lithic Light).</b> Recent/Selected band on top; specimen tiles below. The selected tile carries an amber border, halo, and glowing icon.</figcaption>
+      </figure>
+
+      <h3>6.1 Recent / Selected band</h3>
+      <p>A wide panel pinned above the grid (hidden while a search query is active). Four columns: project identity (badge “Recent”/“Selected,” name, description, tech chips + path) · the project’s <strong>live services</strong> (up to 3, with state nodes and ports — “what’s running before you launch”) · last-opened · and a <strong>Launch</strong> primary + <strong>Open Folder</strong> secondary. It follows the current selection, falling back to the most-recent project.</p>
+
+      <h3>6.2 Specimen tile (grid)</h3>
+      <p>The catalog’s unit. Anatomy, top to bottom:</p>
+      <ul class="tight">
+        <li><strong>Corner state node</strong> (top-right) — running/starting/failed, or a signal dot when selected.</li>
+        <li><strong>SpecimenFrame (84px)</strong> + name + one-line description.</li>
+        <li><strong>Tech chips</strong>, then the <strong>path chip</strong>.</li>
+        <li>Optional <strong>headline service strip</strong> (green well, label, URL) when <code>project.service</code> exists.</li>
+        <li>Optional <strong>subprojects well</strong> — count badge + each subproject with a launch button.</li>
+        <li><strong>Footer</strong> (separated by a stratum line, with a faint gradient): last-opened + launch + “more” buttons.</li>
+      </ul>
+      <p><em>Selection</em> = amber border + raised shadow + soft outline. <em>Hover</em> lifts the tile. Single-click selects; double-click / <kbd>Enter</kbd> opens the Description page.</p>
+
+      <h3>6.3 List view</h3>
+      <p>Toggled by the grid/rows control. A 6-column row: 44px specimen · name (+ inline state node) · description · path · last-opened · launch/more. Selected rows get the amber left-border + soft fill.</p>
+
+      <h3>6.4 Controls &amp; states</h3>
+      <ul class="tight">
+        <li><strong>Sort</strong>: “Last opened” (by <code>sortKey</code>) or “Name.”</li>
+        <li><strong>View toggle</strong>: grid ⇄ list (local UI state).</li>
+        <li><strong>Search</strong>: filters by name, description, path, or tech tag; shows a “Results / N” heading and a styled empty state when nothing matches.</li>
+      </ul>
+
+      <div class="callout gap">
+        <p class="ct"><span class="dot"></span>Backend gaps — Projects</p>
+        <ul class="tight" style="margin-bottom:0;">
+          <li><strong>Project list</strong> is the static <code>TSK_PROJECTS</code> array → replace with a real directory scan (§13.1).</li>
+          <li><strong>Launch</strong> (band, tile, subproject) only toasts → must spawn the project’s default service / run command (§13.5).</li>
+          <li><strong>Open Folder</strong> only toasts → open the OS file manager at <code>project.path</code> (§13.7).</li>
+          <li><strong>Per-project running state</strong> is derived from the (live, but locally-simulated) services array → derive from the real service supervisor.</li>
+          <li><strong>“More actions”</strong> (the dots menu) has no menu yet → define actions (open in editor/terminal, copy path, reveal, rescan).</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ====== 7. DESCRIPTION ====== -->
+    <section>
+      <span class="anchor" id="s7"></span>
+      <p class="part-tag">Part III — Interface</p>
+      <h2 class="section"><span class="num">07</span>Description — project detail</h2>
+      <p class="section-lead">A deep view of one project: identity &amp; actions, its linked note, subprojects, and a directory “cross-section” with file previews. Source: <code>toshokan/page-project.jsx</code>. Empty state prompts the user to pick a project.</p>
+
+      <figure>
+        <img src="toshokan/doc-assets/02-description.png" alt="Project detail page for Idolmancer" />
+        <figcaption><b>Description page.</b> Specimen tray (project switcher) on top; identity + actions + summary on the left; the directory cross-section &amp; file preview on the right.</figcaption>
+      </figure>
+
+      <h3>7.1 Specimen tray</h3>
+      <p>A horizontal rail of every project’s octagonal icon — click to switch the detail view. The current project is ringed in amber.</p>
+
+      <h3>7.2 Identity card</h3>
+      <p>160px specimen + name + description + tech chips; a row of meta chips (<strong>repo</strong> state, git <strong>branch</strong>, “N active” services); last-opened; a copyable path chip; a full-width <strong>Launch</strong>; and an action list: <em>Open in editor · Open directory · Open terminal · View notes</em>.</p>
+
+      <h3>7.3 Summary panel <span class="pill stub">Stubbed</span></h3>
+      <p>The project’s linked note (README or Obsidian), shown read-only with an exposed copper seam, the source label (“Obsidian”), paragraphs, an “updated” timestamp, and <strong>Open in Notes</strong>. A clean empty state appears when no note is linked.</p>
+
+      <h3>7.4 Subprojects panel</h3>
+      <p>Lists nested projects with their own specimen, description, last-opened, and launch/more buttons. Hidden when there are none.</p>
+
+      <h3>7.5 Directory cross-section <span class="pill stub">sample data</span></h3>
+      <p>A file tree with breadcrumb + in-directory search: expand/collapse folders, columns for <em>Name / Size / Modified</em>, mono filenames, folder vs. file vs. image icons, and a running-node marker on a directory that hosts a live service. Selecting a file drives the preview panel.</p>
+
+      <h3>7.6 File preview <span class="pill stub">sample data</span></h3>
+      <p>Header (filename, kind, size, modified) over a mono code block, with “Open in editor.” Falls back to “No preview available.”</p>
+
+      <div class="callout gap">
+        <p class="ct"><span class="dot"></span>Backend gaps — Description</p>
+        <ul class="tight" style="margin-bottom:0;">
+          <li>The tree &amp; previews are sample data <strong>for Idolmancer only</strong> (<code>TSK_TREE</code>, <code>TSK_FILE_PREVIEWS</code>); other projects show a “directory index pending” placeholder. Real builds read the live filesystem on demand (§13.4), lazily expanding directories and reading file heads for preview.</li>
+          <li><strong>Summary</strong> must resolve a project’s README and/or matching Obsidian note and render markdown (§13.3).</li>
+          <li>All four <strong>action rows</strong> + <strong>Open in Notes</strong> currently toast → real editor/terminal/folder/notes launches (§13.7).</li>
+          <li><strong>repo</strong> / <strong>branch</strong> chips are static strings → real git read (§13.2).</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ====== 8. SERVICES ====== -->
+    <section>
+      <span class="anchor" id="s8"></span>
+      <p class="part-tag">Part III — Interface</p>
+      <h2 class="section"><span class="num">08</span>Services — the control room</h2>
+      <p class="section-lead">The operational heart of the app: a table of every configured service across all projects, with live state and an expandable detail drawer. Source: <code>toshokan/page-services.jsx</code>. This is where the most backend work lives.</p>
+
+      <figure>
+        <img src="toshokan/doc-assets/03-services.png" alt="Services table with an expanded detail drawer" />
+        <figcaption><b>Services.</b> Each row is a process; the top row is expanded to show launch command, working dir, URL, and a colour-coded log console. Memory &amp; Actions columns continue to the right.</figcaption>
+      </figure>
+
+      <h3>8.1 The table</h3>
+      <p>Columns: <strong>State</strong> (node + label) · <strong>Service</strong> (name + role) · <strong>Project</strong> (specimen + name + desc) · <strong>Command / Runtime</strong> (runtime + italic mono command) · <strong>Port</strong> (chip with live node) · <strong>PID</strong> · <strong>Uptime</strong> · <strong>Memory</strong> (value + usage bar) · <strong>Actions</strong>.</p>
+
+      <h3>8.2 Row treatments by state</h3>
+      <ul class="tight">
+        <li><strong>running</strong> — green left-edge; memory bar green (amber/<code>--warning</code> when ≥350 MB of a 512 MB reference cap).</li>
+        <li><strong>starting</strong> — amber left-edge + an animated sweep line across the top; “Starting…” in place of uptime.</li>
+        <li><strong>stopped</strong> — no accent; dashes for port/pid/uptime/memory.</li>
+        <li><strong>failed</strong> — red left-edge + an inline error banner (code, message, time) with a “View Logs” button that force-opens the drawer.</li>
+      </ul>
+
+      <h3>8.3 Expanded detail drawer</h3>
+      <p>A two-column inset: left = launch command (copyable), working directory, local URL (openable), started, user, environment chip; right = <strong>Recent output</strong> — a dark log console with severity colouring (green/blue/amber/red) and save/clear-log buttons.</p>
+
+      <h3>8.4 Actions &amp; behavior</h3>
+      <p>Per row: Open-in-browser (running only), Start ▸ / Stop ◼ (Stop disabled while starting), Restart (running/failed), and “more.” In the prototype these mutate local state on timers — <em>start</em> → “starting” for ~2.6s → “running” with a random PID &amp; memory; <em>restart</em> likewise; <em>stop</em> clears runtime fields. A seeded service also auto-promotes from “starting” to “running” after ~9s to demonstrate the animation.</p>
+
+      <div class="callout gap">
+        <p class="ct"><span class="dot"></span>Backend gaps — Services (the core build)</p>
+        <ul class="tight" style="margin-bottom:0;">
+          <li><strong>Start / Stop / Restart</strong> must spawn &amp; signal real OS processes and track them — replacing the timer simulation (§13.5).</li>
+          <li><strong>State, PID, port, uptime, memory</strong> must be sampled from the live process, pushed to the UI continuously (§13.5–13.6).</li>
+          <li><strong>Log console</strong> must stream real stdout/stderr (with severity parsing) via events; Save/Clear must act on the real buffer (§13.6).</li>
+          <li><strong>Open in browser</strong> → open the service’s URL in the default browser (§13.7).</li>
+          <li><strong>Service definitions</strong> come from project config (e.g. <code>toshokan.yml</code>) — discovered, not hard-coded (§13.2).</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ====== 9. SETTINGS ====== -->
+    <section>
+      <span class="anchor" id="s9"></span>
+      <p class="part-tag">Part III — Interface</p>
+      <h2 class="section"><span class="num">09</span>Settings</h2>
+      <p class="section-lead">Interface preferences, watched directories, and project-management defaults. Source: <code>toshokan/page-settings.jsx</code>. Custom controls: a sliding <code>Switch</code>, a segmented <code>Segment</code>, and a styled <code>Select</code>.</p>
+
+      <figure>
+        <img src="toshokan/doc-assets/04-settings.png" alt="Settings page" />
+        <figcaption><b>Settings.</b> Appearance (theme · density · rail emblem), Project Directories (add/remove + auto-scan), and Project Management defaults; an About card sits at the bottom.</figcaption>
+      </figure>
+
+      <table class="t">
+        <thead><tr><th>Group</th><th>Controls</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Appearance</strong></td><td>Theme (Light/Dark) · Interface density (Regular/Compact) · Show rail emblem</td><td><span class="pill done">Prototyped</span> live</td></tr>
+          <tr><td><strong>Project Directories</strong></td><td>List of watched roots with per-row auto-scan toggle + remove; add-directory input</td><td><span class="pill stub">Stubbed</span> local-only</td></tr>
+          <tr><td><strong>Project Management</strong></td><td>Default editor · default terminal · branch to display · restore last session · re-scan on launch · confirm before stopping services</td><td><span class="pill stub">Stubbed</span> local-only</td></tr>
+          <tr><td><strong>About</strong></td><td>Brand mark, “Version 0.4.0 · All data is stored locally,” Documentation button</td><td><span class="pill done">static</span></td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout gap">
+        <p class="ct"><span class="dot"></span>Backend gaps — Settings</p>
+        <p>Appearance tweaks persist to <code>localStorage</code>; everything else is component-local React state that evaporates on reload. All of it must move to a persisted config file (§12.8), and the directory list must actually drive scanning (§13.1). “Confirm before stopping,” “restore last session,” and “re-scan on launch” must gate the corresponding real behaviors. “Default editor/terminal” feed the launch actions (§13.7).</p>
+      </div>
+    </section>
+
+    <!-- ====== 10. GAP MAP ====== -->
+    <section>
+      <span class="anchor" id="s10"></span>
+      <p class="part-tag">Part III — Interface</p>
+      <h2 class="section"><span class="num">10</span>Prototype vs. backend — the gap map</h2>
+      <p class="section-lead">A single table of every faked behavior and the backend capability that must replace it. The capability IDs (C1–C8) are specified in §13.</p>
+
+      <table class="t">
+        <thead><tr><th>UI action / value</th><th>Prototype does…</th><th>Real backend must…</th><th>Cap.</th></tr></thead>
+        <tbody>
+          <tr><td>Project catalog</td><td>Static <code>TSK_PROJECTS</code></td><td>Scan workspace dirs, build project list</td><td class="mono">C1</td></tr>
+          <tr><td>Tech tags · branch · repo</td><td>Hard-coded strings</td><td>Detect stack; read git HEAD &amp; remote</td><td class="mono">C2</td></tr>
+          <tr><td>Summary / README note</td><td>Inline paragraphs</td><td>Resolve README/Obsidian note; render markdown</td><td class="mono">C3</td></tr>
+          <tr><td>Directory tree &amp; file preview</td><td>Sample data (Idolmancer only)</td><td>Read FS lazily; read file heads</td><td class="mono">C4</td></tr>
+          <tr><td>Launch / Start / Stop / Restart</td><td>Toasts + timer state changes</td><td>Spawn/signal real processes; supervise</td><td class="mono">C5</td></tr>
+          <tr><td>PID · port · uptime · memory · state</td><td>Random / seeded values</td><td>Sample live processes; push updates</td><td class="mono">C5</td></tr>
+          <tr><td>Service log console</td><td>Static lines</td><td>Stream stdout/stderr via events</td><td class="mono">C6</td></tr>
+          <tr><td>Open editor / terminal / folder / browser / notes</td><td>Toasts</td><td>Launch external apps / reveal paths / open URLs</td><td class="mono">C7</td></tr>
+          <tr><td>Workspace-root selector &amp; “Last Refresh”</td><td>Static</td><td>Reflect registered roots + last scan time</td><td class="mono">C1</td></tr>
+          <tr><td>All Settings except appearance</td><td>Local React state</td><td>Persist to config; drive behavior</td><td class="mono">C8</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ===================================================================
+         PART IV — BACKEND PLAN
+    ==================================================================== -->
+    <div class="part">
+      <div class="part-head"><span class="part-tag">Part IV</span><span class="part-title">Backend plan — architecture, contracts &amp; roadmap</span></div>
+    </div>
+
+    <!-- ====== 11. ARCHITECTURE ====== -->
+    <section>
+      <span class="anchor" id="s11"></span>
+      <p class="part-tag">Part IV — Backend plan</p>
+      <h2 class="section"><span class="num">11</span>Architecture (Tauri)</h2>
+      <p class="section-lead">A thin React webview over a Rust core. The UI never touches the OS directly — it <code>invoke()</code>s typed commands and <code>listen()</code>s for pushed events. All filesystem, git, and process work happens in Rust.</p>
+
+      <h3>11.1 Topology</h3>
+      <div class="flow">
+React&nbsp;webview&nbsp;(UI&nbsp;state,&nbsp;rendering)<br>
+&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;<span class="ar">invoke(cmd,&nbsp;args)&nbsp;──▶</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;┌──────────────────────────┐<br>
+&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;<span class="ar">◀──&nbsp;listen(event)</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;Rust&nbsp;core&nbsp;(Tauri)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+Tauri&nbsp;IPC&nbsp;bridge&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;·&nbsp;scanner&nbsp;&nbsp;·&nbsp;git&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;·&nbsp;supervisor&nbsp;·&nbsp;fs&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+OS&nbsp;:&nbsp;filesystem&nbsp;·&nbsp;processes&nbsp;·&nbsp;git&nbsp;·&nbsp;shell&nbsp;&nbsp;<span class="ar">◀─▶</span>&nbsp;└──────────────────────────┘
+      </div>
+
+      <h3>11.2 Rust modules</h3>
+      <div class="defs">
+        <dt>config</dt><dd>Load/save the persisted settings file; expose typed accessors.</dd>
+        <dt>scanner</dt><dd>Walk registered directories, identify projects &amp; subprojects, assemble <code>Project</code> records.</dd>
+        <dt>meta</dt><dd>Per-project enrichment: stack detection, <code>toshokan.yml</code>/<code>package.json</code> parse, git branch/remote, README/notes resolution.</dd>
+        <dt>fsview</dt><dd>On-demand directory listing &amp; file-head preview for the cross-section.</dd>
+        <dt>supervisor</dt><dd>The process manager: spawn, track, signal, and sample services; owns the runtime registry.</dd>
+        <dt>logbus</dt><dd>Buffer &amp; stream child-process stdout/stderr to the UI as events.</dd>
+        <dt>sys</dt><dd>External launches: editor, terminal, file manager, browser, notes; clipboard.</dd>
+      </div>
+
+      <h3>11.3 Concurrency &amp; events</h3>
+      <p>Use Tokio. Long operations (scan, spawn, sampling) are async and must never block the UI thread. The supervisor runs a sampling loop (~1–2s) that emits status snapshots; the logbus emits as output arrives (debounced/batched). Shared runtime state lives behind Tauri <em>managed state</em> (e.g. <code>Arc&lt;Mutex&lt;Supervisor&gt;&gt;</code>).</p>
+      <table class="t">
+        <thead><tr><th>Event channel</th><th>Payload</th><th>Consumer</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">service://status</td><td><code>ServiceStatusUpdate</code> (id, state, pid, port, uptimeSec, ramMb)</td><td>Services table, project state nodes, header count</td></tr>
+          <tr><td class="mono">service://log</td><td><code>LogLine</code> (serviceId, ts, severity, text)</td><td>Expanded log console</td></tr>
+          <tr><td class="mono">scan://progress</td><td><code>ScanProgress</code> (root, found, done)</td><td>Status strip “Last Refresh,” catalog refresh</td></tr>
+        </tbody>
+      </table>
+
+      <h3>11.4 Frontend integration</h3>
+      <p>The prototype loads globals from <code>data.js</code> and renders via Babel-in-browser. For production:</p>
+      <ol class="tight">
+        <li>Compile the React tree with <strong>Vite + TypeScript</strong>; drop the in-browser Babel and CDN React tags.</li>
+        <li>Replace <code>window.TSK_*</code> globals with an async <strong>data layer</strong> (<code>src/ipc/*.ts</code>) wrapping <code>invoke()</code>, returning the exact shapes in §12 so components are largely untouched.</li>
+        <li>Subscribe to events with <code>listen()</code> inside effects; map snapshots into the existing services state (the prototype already models services as React state, so the diff is small).</li>
+        <li>Keep <code>data.js</code> as a fixtures module behind a <code>USE_FIXTURES</code> flag for Storybook/visual QA and offline UI work.</li>
+      </ol>
+<pre><code><span class="c">// src/ipc/projects.ts — the data layer the UI calls instead of window.TSK_PROJECTS</span>
+<span class="k">import</span> { invoke } <span class="k">from</span> <span class="s">"@tauri-apps/api/core"</span>;
+<span class="k">import</span> { listen } <span class="k">from</span> <span class="s">"@tauri-apps/api/event"</span>;
+
+<span class="k">export</span> <span class="k">const</span> listProjects = () =&gt; invoke&lt;<span class="t">Project</span>[]&gt;(<span class="s">"list_projects"</span>);
+<span class="k">export</span> <span class="k">const</span> rescan = (root?: <span class="t">string</span>) =&gt; invoke&lt;<span class="t">void</span>&gt;(<span class="s">"rescan"</span>, { root });
+
+<span class="k">export</span> <span class="k">function</span> onServiceStatus(cb: (u: <span class="t">ServiceStatusUpdate</span>) =&gt; <span class="t">void</span>) {
+  <span class="k">return</span> listen&lt;<span class="t">ServiceStatusUpdate</span>&gt;(<span class="s">"service://status"</span>, e =&gt; cb(e.payload));
+}</code></pre>
+    </section>
+
+    <!-- ====== 12. DATA MODEL ====== -->
+    <section>
+      <span class="anchor" id="s12"></span>
+      <p class="part-tag">Part IV — Backend plan</p>
+      <h2 class="section"><span class="num">12</span>Data model &amp; persistence</h2>
+      <p class="section-lead">TypeScript interfaces the IPC layer returns (mirror them as Rust structs with <code>#[derive(Serialize, Deserialize)]</code> and <code>camelCase</code> rename). These match the prototype’s data shapes exactly.</p>
+
+<pre><code><span class="k">interface</span> <span class="t">Project</span> {
+  id: <span class="t">string</span>; name: <span class="t">string</span>; desc: <span class="t">string</span>;
+  tech: <span class="t">string</span>[]; path: <span class="t">string</span>;
+  lastOpened: <span class="t">string</span>; lastOpenedAt: <span class="t">number</span>;  <span class="c">// humanised + raw epoch (for sort)</span>
+  sortKey: <span class="t">number</span>;
+  branch: <span class="t">string</span>; repo: <span class="t">string</span>; serviceCount: <span class="t">number</span>;
+  subprojects: <span class="t">Subproject</span>[];
+  service?: { label: <span class="t">string</span>; url: <span class="t">string</span> };
+  summary?: <span class="t">Summary</span>;
+}
+<span class="k">interface</span> <span class="t">Subproject</span> { name: <span class="t">string</span>; desc: <span class="t">string</span>; lastOpened: <span class="t">string</span>; path?: <span class="t">string</span>; }
+<span class="k">interface</span> <span class="t">Summary</span> { source: <span class="t">string</span>; updated: <span class="t">string</span>; paragraphs: <span class="t">string</span>[]; markdown?: <span class="t">string</span>; }
+
+<span class="k">type</span> <span class="t">ServiceState</span> = <span class="s">"running"</span> | <span class="s">"starting"</span> | <span class="s">"stopped"</span> | <span class="s">"failed"</span>;
+<span class="k">interface</span> <span class="t">Service</span> {
+  id: <span class="t">string</span>; name: <span class="t">string</span>; role: <span class="t">string</span>;
+  projectId: <span class="t">string</span>; projectName: <span class="t">string</span>; projectDesc: <span class="t">string</span>;
+  runtime: <span class="t">string</span>; command: <span class="t">string</span>;
+  port: <span class="t">string</span> | <span class="t">null</span>; pid: <span class="t">string</span> | <span class="t">null</span>;
+  uptime: <span class="t">string</span> | <span class="t">null</span>; ram: <span class="t">number</span> | <span class="t">null</span>;  <span class="c">// MB</span>
+  status: <span class="t">ServiceState</span>;
+  error?: { code: <span class="t">string</span>; message: <span class="t">string</span>; time: <span class="t">string</span> };
+  detail: {
+    launchCommand: <span class="t">string</span>; workingDir: <span class="t">string</span>; localUrl: <span class="t">string</span> | <span class="t">null</span>;
+    started: <span class="t">string</span>; user: <span class="t">string</span>; environment: <span class="t">string</span>;
+    log: <span class="t">LogLine</span>[];
+  };
+}
+<span class="k">interface</span> <span class="t">LogLine</span> { ts: <span class="t">string</span>; severity: <span class="s">"info"</span>|<span class="s">"ok"</span>|<span class="s">"warn"</span>|<span class="s">"error"</span>|<span class="s">"plain"</span>; text: <span class="t">string</span>; }
+
+<span class="k">interface</span> <span class="t">TreeNode</span> {
+  name: <span class="t">string</span>; type: <span class="s">"dir"</span> | <span class="s">"file"</span>; modified: <span class="t">string</span>;
+  size?: <span class="t">string</span>; kind?: <span class="t">string</span>; running?: <span class="t">boolean</span>; children?: <span class="t">TreeNode</span>[];
+}
+<span class="k">interface</span> <span class="t">FilePreview</span> { kind: <span class="t">string</span>; size: <span class="t">string</span>; modified: <span class="t">string</span>; lines: <span class="t">string</span>[]; }</code></pre>
+      <p class="code-cap">Note: the prototype’s log lines are coloured token tuples; production should send structured <code>LogLine{severity}</code> and let the UI map severity→colour.</p>
+
+      <h3>12.1 Persistence</h3>
+      <table class="t">
+        <thead><tr><th>Store</th><th>Location</th><th>Contents · lifetime</th></tr></thead>
+        <tbody>
+          <tr><td><strong>config.json</strong> / <code>.toml</code></td><td class="mono">app_config_dir()</td><td>Watched directories (+auto-scan flags), appearance (theme/density/emblem), management prefs (editor, terminal, branch label, restoreSession, rescanOnLaunch, confirmStop). Persisted on change.</td></tr>
+          <tr><td><strong>project cache</strong></td><td class="mono">app_cache_dir()</td><td>Last scan results + last-opened timestamps, to render instantly on launch before a fresh scan completes. Disposable.</td></tr>
+          <tr><td><strong>service registry</strong></td><td class="mono">in-memory</td><td>Live process handles, PIDs, log ring-buffers. Not persisted; rebuilt from project configs on launch. Optionally persist <em>definitions</em> only.</td></tr>
+        </tbody>
+      </table>
+<pre><code><span class="c">// config.json</span>
+{
+  <span class="t">"version"</span>: <span class="n">1</span>,
+  <span class="t">"directories"</span>: [
+    { <span class="t">"path"</span>: <span class="s">"~/Workspace"</span>, <span class="t">"autoScan"</span>: <span class="k">true</span> },
+    { <span class="t">"path"</span>: <span class="s">"D:\\Archive\\projects"</span>, <span class="t">"autoScan"</span>: <span class="k">false</span> }
+  ],
+  <span class="t">"appearance"</span>: { <span class="t">"theme"</span>: <span class="s">"light"</span>, <span class="t">"density"</span>: <span class="s">"regular"</span>, <span class="t">"railEmblem"</span>: <span class="k">true</span> },
+  <span class="t">"management"</span>: {
+    <span class="t">"editor"</span>: <span class="s">"VS Code"</span>, <span class="t">"terminal"</span>: <span class="s">"Windows Terminal"</span>,
+    <span class="t">"defaultBranch"</span>: <span class="s">"main"</span>,
+    <span class="t">"restoreSession"</span>: <span class="k">true</span>, <span class="t">"rescanOnLaunch"</span>: <span class="k">false</span>, <span class="t">"confirmStop"</span>: <span class="k">true</span>
+  },
+  <span class="t">"session"</span>: { <span class="t">"lastTab"</span>: <span class="s">"projects"</span>, <span class="t">"lastProjectId"</span>: <span class="s">"idolmancer"</span> }
+}</code></pre>
+    </section>
+
+    <!-- ====== 13. CAPABILITIES / IPC ====== -->
+    <section>
+      <span class="anchor" id="s13"></span>
+      <p class="part-tag">Part IV — Backend plan</p>
+      <h2 class="section"><span class="num">13</span>Capability specs &amp; IPC contracts</h2>
+      <p class="section-lead">Eight capabilities (C1–C8) cover the whole backend. Each lists its commands as frontend <code>invoke</code> signatures; mirror them as <code>#[tauri::command]</code> functions.</p>
+
+      <h3>C1 · Directory scanning &amp; project discovery</h3>
+      <p>Walk each registered directory one level deep (configurable); treat a child folder as a project when it looks like one (has <code>.git</code>, <code>package.json</code>, <code>toshokan.yml</code>, <code>pyproject.toml</code>, <code>Cargo.toml</code>, or a README). Recurse one extra level into a project to find subprojects. Build <code>Project</code> records (delegating enrichment to C2/C3). Cache results; emit <code>scan://progress</code>.</p>
+<pre><code>invoke&lt;<span class="t">Project</span>[]&gt;(<span class="s">"list_projects"</span>)                 <span class="c">// cached, instant</span>
+invoke&lt;<span class="t">void</span>&gt;(<span class="s">"rescan"</span>, { root?: <span class="t">string</span> })           <span class="c">// async; emits scan://progress</span>
+invoke&lt;<span class="t">string</span>&gt;(<span class="s">"last_refresh"</span>)                    <span class="c">// ISO time of last scan</span></code></pre>
+      <p class="code-cap">Edge cases: missing/permission-denied roots (skip + surface a non-blocking warning); symlink loops (visited-set guard); huge dirs (cap depth/fan-out, scan off-thread).</p>
+
+      <h3>C2 · Project metadata enrichment</h3>
+      <p>For one project: detect the tech stack (from manifests/extensions), parse <code>toshokan.yml</code> for the launch command + service definitions, read git (<code>HEAD</code> branch, remote/“Local only”, dirty flag), and compute last-opened. Prefer <code>git2</code> (libgit2) over shelling out.</p>
+<pre><code>invoke&lt;<span class="t">Project</span>&gt;(<span class="s">"get_project"</span>, { id: <span class="t">string</span> })
+invoke&lt;<span class="t">GitInfo</span>&gt;(<span class="s">"git_info"</span>, { path: <span class="t">string</span> })   <span class="c">// { branch, remote, dirty }</span></code></pre>
+
+      <h3>C3 · Summary / notes (Obsidian) ingestion</h3>
+      <p>Resolve a project’s note: the project README, and/or a same-named note in the user’s configured Obsidian vault. Return rendered-ready markdown (and the prototype’s paragraph array for the current renderer). Never write to the vault.</p>
+<pre><code>invoke&lt;<span class="t">Summary</span> | <span class="t">null</span>&gt;(<span class="s">"get_summary"</span>, { id: <span class="t">string</span> })</code></pre>
+
+      <h3>C4 · Directory cross-section &amp; file preview</h3>
+      <p>Lazy: list one directory level on demand (the tree expands node by node); read the first N lines / N KB of a text file for preview (guard binary &amp; large files). Flag a directory that hosts a running service (<code>running:true</code>).</p>
+<pre><code>invoke&lt;<span class="t">TreeNode</span>[]&gt;(<span class="s">"list_dir"</span>, { path: <span class="t">string</span> })
+invoke&lt;<span class="t">FilePreview</span> | <span class="t">null</span>&gt;(<span class="s">"preview_file"</span>, { path: <span class="t">string</span>, maxLines?: <span class="t">number</span> })</code></pre>
+
+      <h3>C5 · Service lifecycle &amp; supervision <span class="pill backend">core</span></h3>
+      <p>The heart of the backend. Spawn a service’s command in its working directory as a tracked child; on spawn, capture PID and transition <code>starting → running</code> (or <code>failed</code> with captured stderr). Stop = graceful signal then kill after a timeout; restart = stop+start. A sampling loop reads per-PID CPU/memory and computes uptime, emitting <code>service://status</code>. Detect unexpected exits → <code>failed</code> (with exit code) or <code>stopped</code>.</p>
+<pre><code>invoke&lt;<span class="t">void</span>&gt;(<span class="s">"start_service"</span>,   { id: <span class="t">string</span> })
+invoke&lt;<span class="t">void</span>&gt;(<span class="s">"stop_service"</span>,    { id: <span class="t">string</span> })
+invoke&lt;<span class="t">void</span>&gt;(<span class="s">"restart_service"</span>, { id: <span class="t">string</span> })
+invoke&lt;<span class="t">Service</span>[]&gt;(<span class="s">"list_services"</span>)
+<span class="c">// push: emit("service://status", ServiceStatusUpdate) every ~1–2s per live service</span>
+<span class="k">interface</span> <span class="t">ServiceStatusUpdate</span> {
+  id: <span class="t">string</span>; status: <span class="t">ServiceState</span>;
+  pid: <span class="t">string</span>|<span class="t">null</span>; port: <span class="t">string</span>|<span class="t">null</span>; uptimeSec: <span class="t">number</span>|<span class="t">null</span>; ramMb: <span class="t">number</span>|<span class="t">null</span>;
+}</code></pre>
+      <p class="code-cap">Use a cross-platform process crate (e.g. <code>sysinfo</code> for sampling). On Windows, spawn without a console window and kill the whole process tree (a dev server spawns children). Honour <code>confirmStop</code> in the UI before calling <code>stop_service</code>.</p>
+
+      <h3>C6 · Log capture &amp; streaming</h3>
+      <p>Pipe each child’s stdout/stderr; parse a severity heuristic (INFO/OK/WARN/ERROR, Vite/uvicorn-style prefixes) into <code>LogLine</code>; keep a bounded ring-buffer per service (e.g. last 1–2k lines) and emit new lines on <code>service://log</code>. Save = write buffer to a file; Clear = empty the buffer.</p>
+<pre><code>invoke&lt;<span class="t">LogLine</span>[]&gt;(<span class="s">"get_log"</span>, { id: <span class="t">string</span> })          <span class="c">// backfill on drawer open</span>
+invoke&lt;<span class="t">string</span>&gt;(<span class="s">"save_log"</span>, { id: <span class="t">string</span> })            <span class="c">// returns written path</span>
+invoke&lt;<span class="t">void</span>&gt;(<span class="s">"clear_log"</span>, { id: <span class="t">string</span> })</code></pre>
+
+      <h3>C7 · System actions</h3>
+      <p>Launch external tools using the configured editor/terminal (C8) and OS defaults. Validate paths; surface failures as toasts.</p>
+<pre><code>invoke&lt;<span class="t">void</span>&gt;(<span class="s">"open_in_editor"</span>,  { path: <span class="t">string</span> })
+invoke&lt;<span class="t">void</span>&gt;(<span class="s">"open_terminal"</span>,   { path: <span class="t">string</span> })
+invoke&lt;<span class="t">void</span>&gt;(<span class="s">"reveal_in_files"</span>, { path: <span class="t">string</span> })   <span class="c">// "Open Folder"</span>
+invoke&lt;<span class="t">void</span>&gt;(<span class="s">"open_url"</span>,        { url: <span class="t">string</span> })    <span class="c">// service URL / notes</span>
+invoke&lt;<span class="t">void</span>&gt;(<span class="s">"copy_text"</span>,       { text: <span class="t">string</span> })   <span class="c">// path / command chips</span></code></pre>
+
+      <h3>C8 · Settings persistence</h3>
+      <p>Read/patch the config file; changing <code>directories</code> may trigger a rescan. Emit nothing — the UI holds settings state and re-reads on launch.</p>
+<pre><code>invoke&lt;<span class="t">Config</span>&gt;(<span class="s">"get_config"</span>)
+invoke&lt;<span class="t">Config</span>&gt;(<span class="s">"patch_config"</span>, { patch: <span class="t">Partial</span>&lt;<span class="t">Config</span>&gt; })</code></pre>
+
+      <h3>Consolidated IPC index</h3>
+      <table class="t">
+        <thead><tr><th>Command</th><th>Cap.</th><th>Returns</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">list_projects</td><td>C1</td><td class="mono">Project[]</td><td>cached</td></tr>
+          <tr><td class="mono">rescan</td><td>C1</td><td class="mono">void</td><td>async, emits progress</td></tr>
+          <tr><td class="mono">last_refresh</td><td>C1</td><td class="mono">string</td><td>—</td></tr>
+          <tr><td class="mono">get_project</td><td>C2</td><td class="mono">Project</td><td>enriched</td></tr>
+          <tr><td class="mono">git_info</td><td>C2</td><td class="mono">GitInfo</td><td>libgit2</td></tr>
+          <tr><td class="mono">get_summary</td><td>C3</td><td class="mono">Summary?</td><td>read-only</td></tr>
+          <tr><td class="mono">list_dir</td><td>C4</td><td class="mono">TreeNode[]</td><td>lazy, one level</td></tr>
+          <tr><td class="mono">preview_file</td><td>C4</td><td class="mono">FilePreview?</td><td>head only</td></tr>
+          <tr><td class="mono">start/stop/restart_service</td><td>C5</td><td class="mono">void</td><td>spawn/signal</td></tr>
+          <tr><td class="mono">list_services</td><td>C5</td><td class="mono">Service[]</td><td>+ status events</td></tr>
+          <tr><td class="mono">get_log / save_log / clear_log</td><td>C6</td><td class="mono">LogLine[] / string / void</td><td>+ log events</td></tr>
+          <tr><td class="mono">open_in_editor / open_terminal / reveal_in_files / open_url / copy_text</td><td>C7</td><td class="mono">void</td><td>external</td></tr>
+          <tr><td class="mono">get_config / patch_config</td><td>C8</td><td class="mono">Config</td><td>persisted</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ====== 14. ROADMAP ====== -->
+    <section>
+      <span class="anchor" id="s14"></span>
+      <p class="part-tag">Part IV — Backend plan</p>
+      <h2 class="section"><span class="num">14</span>Phased roadmap</h2>
+      <p class="section-lead">Six phases, ordered so the app is runnable and demoable at the end of each. Services (Phase&nbsp;3) is the largest and riskiest — everything before it de-risks the plumbing.</p>
+
+      <div class="card" style="margin-bottom:12px;">
+        <h4><span class="pill" style="margin-right:8px;">Phase 0</span>Foundation &amp; UI port</h4>
+        <p><strong>Build:</strong> Tauri + Vite + TypeScript scaffold; port the React prototype into it; stand up the <code>src/ipc/*</code> data layer returning §12 shapes from <code>data.js</code> fixtures behind a <code>USE_FIXTURES</code> flag; define all shared types. <strong>Depends on:</strong> nothing. <strong>Exit:</strong> the app runs as a native window and renders the full prototype through the async data layer (still fixtures).</p>
+      </div>
+      <div class="card" style="margin-bottom:12px;">
+        <h4><span class="pill" style="margin-right:8px;">Phase 1</span>Discovery &amp; settings <span class="mono" style="font-size:11px;color:var(--muted);">C1 · C8</span></h4>
+        <p><strong>Build:</strong> config load/save (C8); directory manager drives real scanning (C1); workspace-root selector + “Last Refresh” go live; project cache for instant cold start. <strong>Depends on:</strong> Phase 0. <strong>Exit:</strong> real projects from disk populate the catalog; settings persist across restarts.</p>
+      </div>
+      <div class="card" style="margin-bottom:12px;">
+        <h4><span class="pill" style="margin-right:8px;">Phase 2</span>Project detail <span class="mono" style="font-size:11px;color:var(--muted);">C2 · C3 · C4</span></h4>
+        <p><strong>Build:</strong> stack detection + git info (C2); README/Obsidian summary (C3); lazy directory tree &amp; file preview for <em>all</em> projects (C4). <strong>Depends on:</strong> Phase 1. <strong>Exit:</strong> the Description page is fully live for any project; the “Idolmancer-only” placeholder is gone.</p>
+      </div>
+      <div class="card" style="margin-bottom:12px;">
+        <h4><span class="pill backend" style="margin-right:8px;">Phase 3</span>Services — the core <span class="mono" style="font-size:11px;color:var(--muted);">C5 · C6</span></h4>
+        <p><strong>Build:</strong> the supervisor — spawn/stop/restart real processes, sample PID/port/uptime/memory, detect exits/failures; status events; log piping + severity parsing + streaming + save/clear (C6). Wire project state nodes and the header count to the supervisor. <strong>Depends on:</strong> Phase 1 (service definitions from config/scan). <strong>Exit:</strong> a real dev server starts, runs, logs, and stops from the UI with accurate live telemetry.</p>
+      </div>
+      <div class="card" style="margin-bottom:12px;">
+        <h4><span class="pill" style="margin-right:8px;">Phase 4</span>Actions, command palette &amp; polish <span class="mono" style="font-size:11px;color:var(--muted);">C7</span></h4>
+        <p><strong>Build:</strong> editor/terminal/folder/browser/notes launches + clipboard (C7); the “run command” half of search → a command palette; session restore; honour <code>confirmStop</code>, <code>rescanOnLaunch</code>, density; the tile/row “more actions” menus. <strong>Depends on:</strong> Phases 2–3. <strong>Exit:</strong> every prototype toast is replaced by a real action; no stubs remain.</p>
+      </div>
+      <div class="card">
+        <h4><span class="pill" style="margin-right:8px;">Phase 5</span>Packaging &amp; distribution</h4>
+        <p><strong>Build:</strong> Windows installer + <code>.ico</code>, code signing, optional auto-update; finish the remaining art (§18); evaluate the Android path. <strong>Depends on:</strong> Phase 4. <strong>Exit:</strong> a signed, installable Windows build.</p>
+      </div>
+    </section>
+
+    <!-- ====== 15. ERRORS ====== -->
+    <section>
+      <span class="anchor" id="s15"></span>
+      <p class="part-tag">Part IV — Backend plan</p>
+      <h2 class="section"><span class="num">15</span>Error handling &amp; edge cases</h2>
+      <p class="section-lead">Toshokan watches a messy, real filesystem and launches arbitrary commands — degrade gracefully, never crash, and never block the UI thread. Commands return <code>Result</code>; the UI shows a toast and keeps last-known-good data.</p>
+      <table class="t">
+        <thead><tr><th>Situation</th><th>Handling</th></tr></thead>
+        <tbody>
+          <tr><td>Missing / permission-denied scan root</td><td>Skip it; toast a non-blocking warning; keep other roots’ results.</td></tr>
+          <tr><td>Symlink loops / enormous trees</td><td>Visited-set guard; cap depth &amp; fan-out; scan off-thread with progress.</td></tr>
+          <tr><td>Not a git repo / detached HEAD</td><td><code>repo:"Local only"</code>, branch blank or commit short-hash — never error.</td></tr>
+          <tr><td>No README / no linked note</td><td>Return <code>null</code>; UI shows the existing empty state.</td></tr>
+          <tr><td>Binary / huge / unreadable file preview</td><td>Return <code>null</code> → “No preview available.”</td></tr>
+          <tr><td>Service command not found / non-zero exit</td><td><code>failed</code> with exit code + captured stderr in the error banner.</td></tr>
+          <tr><td>Port already in use</td><td>Surfaces naturally as a failed start with the child’s own error (matches the prototype’s Inventorois fixture).</td></tr>
+          <tr><td>Stop won’t terminate</td><td>Graceful signal → timeout → force-kill the process tree; reflect <code>stopped</code> only once confirmed dead.</td></tr>
+          <tr><td>Orphaned children on app quit</td><td>On shutdown, stop all supervised services (configurable); never leak processes.</td></tr>
+          <tr><td>Config corrupt / version mismatch</td><td>Back up the bad file, fall back to defaults, migrate by <code>version</code>.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ====== 16. TESTING ====== -->
+    <section>
+      <span class="anchor" id="s16"></span>
+      <p class="part-tag">Part IV — Backend plan</p>
+      <h2 class="section"><span class="num">16</span>Testing strategy</h2>
+      <div class="defs">
+        <dt>Rust unit</dt><dd>Project detection &amp; classification, <code>toshokan.yml</code>/manifest parsing, the log-severity parser, config load/migrate, last-opened/uptime formatting. Pure functions — fast and deterministic.</dd>
+        <dt>Rust integration</dt><dd>Scan a fixture directory tree in a tempdir and assert the resulting <code>Project[]</code>; spawn a trivial cross-platform child (e.g. a sleep/echo script), assert <code>starting→running→stopped</code> transitions and that no process leaks.</dd>
+        <dt>Frontend</dt><dd>Component tests against the <code>data.js</code> fixtures (the dataset intentionally covers every service state and the 0/1/2-service and subproject cases); data-layer tests with <code>invoke</code> mocked.</dd>
+        <dt>End-to-end</dt><dd>Drive the built app with the Tauri WebDriver harness for the critical path: scan → open a project → start a service → see logs → stop it.</dd>
+        <dt>Manual QA</dt><dd>Light/dark parity, reduced-motion, keyboard nav (<kbd>Ctrl</kbd>+<kbd>K</kbd>, <kbd>Ctrl</kbd>+<kbd>1–4</kbd>), and high-DPI scaling (Windows 100–200%; assets are specced at 2×).</dd>
+      </div>
+      <div class="callout decision">
+        <p class="ct"><span class="dot"></span>Decision — keep fixtures as a first-class artifact</p>
+        <p><code>data.js</code> is more than mock data: it’s the visual-regression baseline and the contract the UI was built against. Preserve it behind <code>USE_FIXTURES</code> so UI work, Storybook, and screenshot tests never need a live machine.</p>
+      </div>
+    </section>
+
+    <!-- ====== 17. PACKAGING ====== -->
+    <section>
+      <span class="anchor" id="s17"></span>
+      <p class="part-tag">Part IV — Backend plan</p>
+      <h2 class="section"><span class="num">17</span>Packaging &amp; distribution</h2>
+      <h3>Windows (v1)</h3>
+      <ul class="tight">
+        <li>Build with the Tauri bundler → MSI/NSIS installer.</li>
+        <li>Generate a real <code>.ico</code> (16/32/48/256) from the app-icon master for the taskbar/installer — flagged as outstanding in <code>ASSETS.md</code>.</li>
+        <li>Code-sign the binary &amp; installer (avoids SmartScreen friction).</li>
+        <li>Optional: Tauri updater for in-place updates.</li>
+        <li>Spawn children without console windows; ensure the supervisor kills whole process trees on stop/quit.</li>
+      </ul>
+      <h3>Android (later)</h3>
+      <p>Tauri 2 supports mobile, and one sample project (Idolmancer) already imagines an Android path — but it is <strong>out of scope for v1</strong>. Crucially, the <em>Services</em> capability (local process supervision) has no equivalent on Android; a mobile build would be a read-only catalog/notes viewer, likely over the user’s tailnet, not a process control room. Treat it as a separate future track.</p>
+      <div class="callout decision">
+        <p class="ct"><span class="dot"></span>Decision — desktop-first, services are desktop-only</p>
+        <p>Design the supervisor (C5/C6) as a desktop-only module behind a capability boundary, so a future mobile target can compile without it rather than stubbing it.</p>
+      </div>
+    </section>
+
+    <!-- ====== 18. ASSETS / FILES ====== -->
+    <section>
+      <span class="anchor" id="s18"></span>
+      <p class="part-tag">Part IV — Backend plan</p>
+      <h2 class="section"><span class="num">18</span>Asset checklist &amp; file reference</h2>
+
+      <h3>Outstanding assets (from <code>ASSETS.md</code>)</h3>
+      <table class="t">
+        <thead><tr><th>Asset</th><th>For</th><th>Spec</th></tr></thead>
+        <tbody>
+          <tr><td>2 subproject icons — <em>Idolmancy&nbsp;–&nbsp;Megane</em> (&amp; any future nested projects)</td><td>Subproject cards, Services rows</td><td>512px master + <code>-dark</code> variant, same blend pipeline</td></tr>
+          <tr><td>Empty-state illustration</td><td>“No project selected”</td><td>SVG or 600×340px</td></tr>
+          <tr><td>Windows <code>.ico</code></td><td>Taskbar / installer</td><td>16/32/48/256 from app-icon master</td></tr>
+        </tbody>
+        <caption>Project icons, the brand mark, and the rail emblem are <span class="pill done" style="vertical-align:baseline;">done</span> (512px masters + dark variants, in <code>toshokan/assets/</code>). Tech-logo glyphs were intentionally cut — tech chips are text-only.</caption>
+      </table>
+
+      <h3>File reference</h3>
+      <p>The prototype source — all <strong>design references</strong>, to be recreated in the Tauri app, not shipped as-is:</p>
+      <table class="t">
+        <thead><tr><th>File</th><th>Contains</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">Toshokan.html</td><td>Entry point — loads fonts, tokens, React/Babel, and the script modules below</td></tr>
+          <tr><td class="mono">toshokan/tokens.css</td><td>All design tokens (both themes), base styles, scrollbars, keyframes — §3</td></tr>
+          <tr><td class="mono">toshokan/data.js</td><td>Fixtures: <code>TSK_PROJECTS</code>, <code>TSK_SERVICES</code>, <code>TSK_TREE</code>, <code>TSK_FILE_PREVIEWS</code> — §2, §12</td></tr>
+          <tr><td class="mono">toshokan/shared.jsx</td><td>Shared components: Icon set, Node, SpecimenFrame, BrandMark, Slot, chips, buttons, Toast — §4</td></tr>
+          <tr><td class="mono">toshokan/app.jsx</td><td>Shell: title bar, nav rail, context header, status strip, state, shortcuts, tweaks — §5</td></tr>
+          <tr><td class="mono">toshokan/page-projects.jsx</td><td>Catalog: recent band, specimen tiles, list rows, sort/view/search — §6</td></tr>
+          <tr><td class="mono">toshokan/page-project.jsx</td><td>Detail: specimen tray, identity card, summary, subprojects, directory + preview — §7</td></tr>
+          <tr><td class="mono">toshokan/page-services.jsx</td><td>Services table, row states, detail drawer, log console — §8</td></tr>
+          <tr><td class="mono">toshokan/page-settings.jsx</td><td>Settings: appearance, directories, management, about — §9</td></tr>
+          <tr><td class="mono">toshokan/ASSETS.md</td><td>Asset manifest, sizes, blend pipeline, outstanding needs</td></tr>
+          <tr><td class="mono">toshokan/assets/</td><td>Project icons (+dark), app icon, rail emblem — 512px masters</td></tr>
+        </tbody>
+      </table>
+
+      <hr class="rule" />
+      <div style="display:flex; align-items:center; gap:16px; padding:4px 0 0;">
+        <img src="toshokan/assets/rail-emblem.png" alt="" style="width:46px;height:46px;object-fit:contain;opacity:.85;" />
+        <div>
+          <p style="margin:0; font-size:13px; color:var(--muted);"><strong style="color:var(--ink-soft);">Toshokan — Development &amp; Implementation Guide.</strong> Pair this document with the prototype bundle and the <code>toshokan/assets/</code> folder. Build order: §14. Contracts: §12–§13. When in doubt about look &amp; behavior, the prototype is authoritative; when in doubt about <em>intent</em>, the callouts are.</p>
+        </div>
+      </div>
+    </section>
+
+
+    </td></tr></tbody>
+    <tfoot><tr><td class="ftr-space"></td></tr></tfoot>
+  </table>
+</main>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" fill="#23282B"/>
+    <g transform="translate(50 50)" fill="none" stroke="#F0A84B" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round">
+      <polygon points="0,-26 22,-13 22,13 0,26 -22,13 -22,-13"/>
+      <path d="M-12 -4 Q0 -11 12 -4 L12 11 Q0 5 -12 11 Z"/>
+      <line x1="0" y1="-7" x2="0" y2="9"/>
+    </g>
+  </svg>
+</template>
+<script>
+(async () => {
+  if (!document.title || !document.title.trim()) document.title = "Toshokan Development Doc";
+  // Prepend so page-supplied @page / break rules (deck-stage's margin:0,
+  // author CSS) keep source-order precedence over the baseline.
+  const baseCss = document.createElement('style');
+  baseCss.textContent = "@media print {\n  figure, table { break-inside: avoid; }\n  *, *::before, *::after {\n    print-color-adjust: exact; -webkit-print-color-adjust: exact;\n    backdrop-filter: none !important; -webkit-backdrop-filter: none !important;\n    animation-delay: -99s !important; animation-duration: .001s !important;\n    animation-iteration-count: 1 !important; animation-fill-mode: both !important;\n    animation-play-state: running !important; transition-duration: 0s !important;\n  }\n}";
+  document.head.prepend(baseCss);
+  if (document.readyState === 'loading') {
+    await new Promise((r) => document.addEventListener('DOMContentLoaded', r, { once: true }));
+  }
+  let ds = document.querySelector('deck-stage');
+  // whenDefined never resolves when nothing registers the element, so only
+  // await it when a <deck-stage> tag exists (and race a timeout regardless).
+  if (ds && !customElements.get('deck-stage')) {
+    try {
+      await Promise.race([
+        customElements.whenDefined('deck-stage'),
+        new Promise((r) => setTimeout(r, 3000)),
+      ]);
+    } catch (e) {}
+    ds = document.querySelector('deck-stage');
+  }
+  // dc-runtime assigns window.DCLogic at init and mounts into #dc-root on
+  // DOMContentLoaded; settle on that subtree so React has rendered before
+  // print(). Non-DC pages fall through to weighing body.
+  const isDc = !ds && 'DCLogic' in window;
+  const settleRoot = ds || (isDc ? document.getElementById('dc-root') : null) || document.body;
+  if (settleRoot) {
+    // Weigh only content children — skip script/style/template so inline
+    // Babel/CSS doesn't register as stable "content" before the framework
+    // has mounted anything.
+    const MEDIA = 'img,svg,canvas,video,picture,iframe,embed,object';
+    const weigh = () => {
+      let text = 0, media = 0;
+      for (const c of settleRoot.children) {
+        const t = c.tagName;
+        if (t === 'SCRIPT' || t === 'STYLE' || t === 'TEMPLATE') continue;
+        text += (c.textContent || '').trim().length;
+        media += c.querySelectorAll(MEDIA).length + (c.matches(MEDIA) ? 1 : 0);
+      }
+      return text + media * 100;
+    };
+    // "Non-zero and stable" alone is not sufficient to mean rendered: generic
+    // body can carry a static shell while async main content is pending, and
+    // #dc-root can carry the root DC's static text while child refs are still
+    // .sc-placeholder boxes. Gate generic on readyState 'complete', and never
+    // accept stability while a dc-runtime placeholder is present.
+    const isGeneric = settleRoot === document.body;
+    const deadline = Date.now() + 15000;
+    let last = -1, stable = 0;
+    while (Date.now() < deadline) {
+      const n = weigh();
+      const ready =
+        (!isGeneric || document.readyState === 'complete') &&
+        !settleRoot.querySelector('.sc-placeholder');
+      if (n > 0 && n === last && ready) { if (++stable >= 2) break; } else { stable = 0; }
+      last = n;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }
+  // Reveal content gated on scroll or visibility before printing. Lazy <img>,
+  // IntersectionObserver fade-ins, and collapsed <details> don't render while
+  // off-screen, so a long page would print with them blank or closed. Open
+  // every <details>, force native-lazy images eager, and scroll the document
+  // through its full height to trip lazy-load + IO; then wait (bounded) for the
+  // newly-triggered images. Inert for deck-stage (slides aren't scroll-gated).
+  try {
+    for (const d of document.querySelectorAll('details')) d.open = true;
+    for (const img of document.querySelectorAll('img[loading="lazy"]'))
+      img.loading = 'eager';
+    const scroller = document.scrollingElement || document.documentElement;
+    const full = Math.max(scroller.scrollHeight, document.body.scrollHeight);
+    const step = window.innerHeight || 800;
+    for (let y = 0; y <= full; y += step) {
+      window.scrollTo(0, y);
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    window.scrollTo(0, 0);
+    await Promise.race([
+      Promise.all(
+        [...document.images].map((img) =>
+          img.complete
+            ? null
+            : new Promise((res) => {
+                img.addEventListener('load', res, { once: true });
+                img.addEventListener('error', res, { once: true });
+              })
+        )
+      ),
+      new Promise((r) => setTimeout(r, 4000)),
+    ]);
+  } catch (e) {}
+  try { await document.fonts.ready; } catch (e) {}
+  // Jump every animation to its end state so print() never captures a slide
+  // mid-entrance. Ordering matters: the 0s-transition style must be live
+  // BEFORE data-deck-active is set so attribute-keyed transitions don't
+  // start a (now-0s) run from the pre-active base.
+  const st = document.createElement('style');
+  st.textContent = '*,*::before,*::after{animation-delay:-99s !important;animation-duration:.001s !important;animation-iteration-count:1 !important;animation-fill-mode:both !important;animation-play-state:running !important;transition-duration:0s !important}';
+  document.head.appendChild(st);
+  for (const d of document.querySelectorAll('deck-stage')) {
+    for (const c of d.children) {
+      const t = c.tagName;
+      if (t === 'SCRIPT' || t === 'STYLE' || t === 'TEMPLATE') continue;
+      c.setAttribute('data-deck-active', '');
+    }
+  }
+  // Re-append deck-stage's @page last so no author @page can add a margin and
+  // spill each full-bleed slide onto two sheets. Backstop for old copies.
+  if (ds) {
+    let pg = document.getElementById('deck-stage-print-page');
+    if (!pg) {
+      pg = document.createElement('style');
+      pg.textContent = '@page{size:' + (+ds.getAttribute('width') || 1920) +
+        'px ' + (+ds.getAttribute('height') || 1080) + 'px;margin:0}';
+    }
+    document.body.appendChild(pg);
+  }
+  try {
+    const sweep = () => {
+      for (const a of document.getAnimations()) {
+        try { a.finish(); } catch (e) {
+          try { a.currentTime = (a.effect && a.effect.getComputedTiming().duration) || 0; a.pause(); } catch (e2) {}
+        }
+      }
+    };
+    sweep();
+    await new Promise((r) => requestAnimationFrame(r));
+    sweep();
+    await new Promise((r) => requestAnimationFrame(r));
+  } catch (e) {}
+  // Size the PDF page to the rendered design unless the file opted into
+  // standard paper via @page{size:letter|A4|…}. Decks own their own @page.
+  var __m = null;
+  try { __m = (() => {
+  var docEl = document.documentElement;
+  var doc = { width: docEl.scrollWidth, height: docEl.scrollHeight };
+
+  var ds = document.querySelector('deck-stage');
+  if (ds) {
+    var dw = Number(ds.getAttribute('width')) || 1920;
+    var dh = Number(ds.getAttribute('height')) || 1080;
+    var n = typeof ds.length === 'number' ? ds.length : ds.children.length;
+    var idx = typeof ds.index === 'number' ? ds.index : 0;
+    var frames = [];
+    for (var i = 0; i < n; i++) frames.push({ left: 0, top: 0, width: dw, height: dh });
+    return { kind: 'deck', doc: doc, frames: frames,
+      authored: frames.map(function(){return{width:true,height:true}}),
+      deck: { width: dw, height: dh, slideCount: n, index: idx },
+      signals: { paperPage: false, pxPage: false } };
+  }
+
+  var paperPage = false, pxPage = false;
+  var eachRule = function (fn) {
+    for (var s = 0; s < document.styleSheets.length; s++) {
+      var rs; try { rs = document.styleSheets[s].cssRules; } catch (e) { continue; }
+      for (var r = 0; r < rs.length; r++) {
+        fn(rs[r]);
+        if (rs[r].cssRules) for (var n = 0; n < rs[r].cssRules.length; n++) fn(rs[r].cssRules[n]);
+      }
+    }
+  };
+  eachRule(function (r) {
+    if (r.type !== 6) return;
+    var m = /\bsize\s*:\s*([^;}]+)/i.exec(r.cssText || '');
+    if (!m) return;
+    if (/\b(letter|a[3-5]|legal|ledger)\b/i.test(m[1])) paperPage = true;
+    if (/\d+(?:\.\d+)?px\b/i.test(m[1])) pxPage = true;
+  });
+  var signals = { paperPage: paperPage, pxPage: pxPage };
+
+  if (paperPage) {
+    return { kind: 'paper-doc', doc: doc, signals: signals,
+      frames: [{ left: 0, top: 0, width: doc.width, height: doc.height }],
+      authored: [{ width: false, height: false }] };
+  }
+
+  var pxVal = function (v) {
+    var m = /^(\d+(?:\.\d+)?)px$/.exec(v || ''); return m ? +m[1] : 0;
+  };
+  var authoredPx = function (el, prop) {
+    if (pxVal(el.style[prop])) return true;
+    var attr = el.getAttribute(prop);
+    if (attr && /^\d+$/.test(attr)) return true;
+    var hit = false;
+    eachRule(function (r) {
+      if (hit || r.type !== 1 || !r.style) return;
+      try { if (el.matches(r.selectorText) && pxVal(r.style[prop])) hit = true; } catch (e) {}
+    });
+    return hit;
+  };
+
+  var el = document.body;
+  for (;;) {
+    var kids = [];
+    for (var c = 0; c < el.children.length; c++) {
+      var t = el.children[c].tagName;
+      if (t !== 'SCRIPT' && t !== 'STYLE' && t !== 'TEMPLATE') kids.push(el.children[c]);
+    }
+    if (kids.length !== 1 || !(kids[0] instanceof HTMLElement)) break;
+    el.setAttribute('data-om-frame-wrap', '');
+    el = kids[0];
+    if (authoredPx(el, 'width')) break;
+  }
+
+  var sx = window.scrollX || 0, sy = window.scrollY || 0;
+  var rectOf = function (e) {
+    var r = e.getBoundingClientRect();
+    var oy; try { oy = getComputedStyle(e).overflowY; } catch (err) {}
+    var h = oy === 'visible' ? Math.max(r.height, e.scrollHeight || 0) : r.height;
+    return { left: r.left + sx, top: r.top + sy, width: r.width, height: h };
+  };
+
+  // Multi-frame: ≥2 visible non-fixed children, each with authored px width
+  // AND height, all within ±2px of each other. Off unless the page opts in
+  // via data-om-multi-frame on the stop element — guards against card grids
+  // and pricing tables that match the geometry but aren't separate canvases.
+  if (el.hasAttribute('data-om-multi-frame')) {
+    var cands = [];
+    for (var k = 0; k < el.children.length; k++) {
+      var ch = el.children[k];
+      var cs; try { cs = getComputedStyle(ch); } catch (e) { continue; }
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.position === 'fixed') continue;
+      var rc = rectOf(ch);
+      if (rc.width < 2 || rc.height < 2) continue;
+      if (!authoredPx(ch, 'width') || !authoredPx(ch, 'height')) continue;
+      cands.push(rc);
+    }
+    if (cands.length >= 2) {
+      var w0 = cands[0].width, h0 = cands[0].height, ok = true;
+      for (var q = 1; q < cands.length; q++)
+        if (Math.abs(cands[q].width - w0) > 2 || Math.abs(cands[q].height - h0) > 2) ok = false;
+      if (ok) return { kind: 'multi-frame', doc: doc, signals: signals,
+        frames: cands, authored: cands.map(function(){return{width:true,height:true}}) };
+    }
+  }
+
+  return { kind: 'single-canvas', doc: doc, signals: signals,
+    frames: [rectOf(el)],
+    authored: [{ width: authoredPx(el, 'width'), height: authoredPx(el, 'height') }] };
+})(); } catch (e) {}
+  var frame = null;
+  if (__m && __m.kind === 'single-canvas') {
+    var f = __m.frames && __m.frames[0];
+    if (f && f.width >= 200 && f.height >= 200) {
+      frame = f;
+      var fst = document.createElement('style');
+      fst.textContent = '@media print{@page{size:' + f.width + 'px ' + f.height +
+        'px;margin:0}html,body,[data-om-frame-wrap]{padding:0!important;' +
+        'margin:0!important;background:none!important}}';
+      document.body.appendChild(fst);
+    }
+  }
+  // Relax break-inside on oversized elements. An element taller than a
+  // printable page can't honor break-inside: avoid — browsers either overflow
+  // it or push it whole to the next page, leaving a blank gap, then break it
+  // anyway at an arbitrary point. After the final layout (content revealed,
+  // animations jumped), find elements taller than a page that still compute
+  // break-inside: avoid and reset them to auto, so the browser breaks them at
+  // their children's boundaries instead (children keep their own avoid). PAGE_PX
+  // is a conservative portrait estimate at 96 CSS px/in — Letter/A4 usable
+  // height minus our 0.5in margins — so only clearly-oversized elements are
+  // touched and under-page elements still stay whole. Skipped for decks (slides
+  // are sized to the page) and for fixed-size canvases (frame set, or an author
+  // px-based @page) — runs as before for flowing docs on letter/A4.
+  try {
+    if (!ds && !frame && !(__m && __m.signals && __m.signals.pxPage)) {
+      const PAGE_PX = 1024;
+      // Our print defaults add a real @page margin only when the source has
+      // no @page of its own; computed style can't tell us (it reports screen
+      // media), so read the injected rule directly.
+      const defaults = document.querySelector('style[data-omelette-print-defaults]');
+      const pageInset = /@page\s*\{[^}]*margin/.test(defaults ? defaults.textContent || '' : '');
+      const SEL = 'section,article,figure,table,pre,blockquote,[class~="card" i],[class~="page" i],[class~="sheet" i]';
+      for (const el of document.body.querySelectorAll(SEL)) {
+        if (el instanceof HTMLElement && el.offsetHeight > PAGE_PX) {
+          el.setAttribute('data-om-oversized', '');
+          // Fake-paged docs simulate sheets with over-tall break-after:page
+          // boxes; honoring the break spills half-blank pages and ends a
+          // colored box mid-sheet. Flow them, and (only when we own the page
+          // inset) drop the redundant padding/background via the rule below.
+          const cs = getComputedStyle(el);
+          if (cs.breakAfter === 'page' || cs.pageBreakAfter === 'always') {
+            el.setAttribute('data-om-fakepage', '');
+          }
+        }
+      }
+      const ost = document.createElement('style');
+      ost.textContent = '@media print{' +
+        '[data-om-oversized]{break-inside:auto !important;page-break-inside:auto !important}' +
+        '[data-om-fakepage]{break-after:auto !important;page-break-after:auto !important}' +
+        (pageInset ? '[data-om-fakepage]{padding:0 !important;background:none !important}' : '') +
+        '}';
+      document.head.appendChild(ost);
+    }
+  } catch (e) {}
+  // macOS Preview renders Skia-PDF Luminosity soft-masks as opaque grey boxes;
+  // swap the CSS that triggers them for Preview-safe forms.
+  try {
+    for (const el of document.body.querySelectorAll('*')) {
+      const cs = getComputedStyle(el);
+
+      if (cs.boxShadow !== 'none' && cs.filter === 'none') {
+        const outs = [], kept = [];
+        for (const s of cs.boxShadow.split(/,(?![^(]*[)])/)) {
+          const t = s.trim();
+          const m = t.match(/^(rgba?[(][^)]+[)]) (-?[0-9.]+px) (-?[0-9.]+px) ([0-9.]+px) -?[0-9.]+px$/);
+          if (m && parseFloat(m[4]) > 0) outs.push('drop-shadow(' + m[2] + ' ' + m[3] + ' ' + m[4] + ' ' + m[1] + ')');
+          else kept.push(t);
+        }
+        if (outs.length) {
+          el.style.setProperty('filter', outs.join(' '), 'important');
+          el.style.setProperty('box-shadow', kept.join(', ') || 'none', 'important');
+        }
+      }
+
+      const mask = cs.maskImage && cs.maskImage !== 'none' ? cs.maskImage : cs.webkitMaskImage;
+      if (mask && mask !== 'none' && cs.filter === 'none') el.style.setProperty('filter', 'opacity(1)', 'important');
+    }
+  } catch (e) {}
+  setTimeout(() => { try { window.print(); } catch (e) {} }, 200);
+})();
+</script>
+</body>
+</html>
