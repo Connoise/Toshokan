@@ -42,9 +42,9 @@ selected/unselected background assets are required.** (If a physical backplate
 is ever wanted instead, the spec would be a 256 px octagonal plate in two
 states — default and selected — but the blend approach covers both for free.)
 
-**STILL NEEDED: 2 subproject icons** — *Idolmancy – Megane* and *Xhungus*.
-These render as striped octagon placeholders in subproject cards and the
-Services table.
+**STILL NEEDED: 1 subproject icon** — *Idolmancy – Megane*. Renders as a
+striped octagon placeholder in subproject cards and the Services table.
+(*Xhungus* was dropped — that project has been archived.)
 
 ## 2. Application / brand identity — DONE
 
@@ -85,7 +85,7 @@ Still worth producing outside this prototype: a real `.ico`
   rendering (see §1).
 
 ### Summary of remaining asset needs
-- 2 subproject master icons (Idolmancy – Megane, Xhungus)
+- 1 subproject master icon (Idolmancy – Megane)
 - 1 substrate texture piece (vein trace, "Recent" band)
 - 1 empty-state illustration
 - (.ico packaging of the app icon, for the real Windows build)

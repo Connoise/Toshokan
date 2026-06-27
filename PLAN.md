@@ -414,14 +414,16 @@ Already done (kept): 7 project icons (+`-dark`), app/brand mark, rail emblem (`t
 
 ---
 
-## 11. Open items to confirm before/while building
+## 11. Open items
 
-1. **"Xhungus"** subproject — real, or a stale slot to drop? (§9)
-2. **`update.install` per project** — default **off** (cautious). Confirm you want the opt-in toggle
-   rather than always running `npm/pnpm/pip install` after a pull.
+1. ~~**"Xhungus"** subproject~~ — **resolved:** project archived, icon dropped (§9).
+2. ~~**`update.install` opt-in toggle**~~ — **resolved:** confirmed, default **off** (cautious).
 3. **Obsidian vault path** — the actual `vaultRoot` to seed in config (can be set later in Settings).
 4. **Projects parent directory** — the actual path/name of the parent that holds the project dirs
    (Q15 says it exists but the exact path is TBD); defaults can ship and be edited in Settings.
+
+> Items 3–4 are real paths on your machine; sensible defaults ship now and are editable in Settings,
+> so they don't block development.
 
 ---
 

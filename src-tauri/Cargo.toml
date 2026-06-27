@@ -1,0 +1,22 @@
+[package]
+name = "toshokan"
+version = "0.5.0"
+description = "Local-first desktop launcher and control room for a developer's personal workspace."
+authors = ["Connoise"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "toshokan_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Phase 1+ will add: git2, ignore/walkdir, notify, sysinfo, tokio.
+# The supervisor (C5/C6) lands behind a desktop-only capability boundary.
