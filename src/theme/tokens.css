@@ -162,6 +162,42 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   }
 }
 
+/* Rendered markdown (README / notes) — scoped, themed via tokens */
+.tsk-md { font-size: 13.5px; line-height: 1.6; color: var(--text-primary); }
+.tsk-md > :first-child { margin-top: 0; }
+.tsk-md > :last-child { margin-bottom: 0; }
+.tsk-md h1, .tsk-md h2, .tsk-md h3, .tsk-md h4 {
+  font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; margin: 18px 0 8px;
+}
+.tsk-md h1 { font-size: 20px; }
+.tsk-md h2 { font-size: 16.5px; padding-bottom: 5px; border-bottom: 1px solid var(--line-soft); }
+.tsk-md h3 { font-size: 14.5px; }
+.tsk-md p { margin: 9px 0; }
+.tsk-md a { color: var(--copper); text-decoration: none; }
+.tsk-md a:hover { text-decoration: underline; }
+.tsk-md ul, .tsk-md ol { margin: 9px 0; padding-left: 22px; }
+.tsk-md li { margin: 3px 0; }
+.tsk-md code {
+  font-family: var(--font-mono); font-size: 0.86em;
+  background: var(--surface-recessed); border: 1px solid var(--line-soft);
+  border-radius: 4px; padding: 1px 5px;
+}
+.tsk-md pre {
+  background: var(--bg-base); border: 1px solid var(--line-soft);
+  border-radius: 10px; padding: 12px 14px; overflow-x: auto; margin: 10px 0;
+}
+.tsk-md pre code { background: none; border: none; padding: 0; font-size: 12px; }
+.tsk-md blockquote {
+  margin: 10px 0; padding: 2px 14px; color: var(--text-secondary);
+  border-left: 2.5px solid var(--copper); background: var(--surface-recessed);
+  border-radius: 0 8px 8px 0;
+}
+.tsk-md table { border-collapse: collapse; margin: 12px 0; font-size: 12.5px; width: 100%; }
+.tsk-md th, .tsk-md td { border: 1px solid var(--line-soft); padding: 6px 10px; text-align: left; }
+.tsk-md th { background: var(--bg-base); font-weight: 700; }
+.tsk-md hr { border: none; border-top: 1px solid var(--line-soft); margin: 16px 0; }
+.tsk-md img { max-width: 100%; border-radius: 8px; }
+
 @keyframes tsk-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }

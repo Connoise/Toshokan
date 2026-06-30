@@ -1,11 +1,38 @@
 // Toshokan — Project detail page (overview + directory cross-section).
-import { useState, useMemo } from "react";
+// Phase 2: git/stack (C2), README/notes summary with full GFM render (C3),
+// and a lazy directory tree + file preview for every project (C4).
+import { useState, useEffect, useCallback } from "react";
 import { Icon, Node, Slot, SpecimenFrame, TechChip, PathChip, StatusChip, PrimaryBtn, SecondaryBtn, IconBtn } from "../components/shared";
-import { FIXTURE_TREE, FIXTURE_FILE_PREVIEWS } from "../ipc/fixtures";
-import type { Project, Service, TreeNode } from "../ipc";
+import { MarkdownView } from "../components/MarkdownView";
+import { gitInfo, getSummary, listDir, previewFile } from "../ipc";
+import type { Project, Service, TreeNode, GitInfo, Summary, FilePreview as FilePreviewData } from "../ipc";
 
 // ---- Overview column --------------------------------------------------------
-function IdentityCard({ project, activeServiceCount, onLaunch, onAction }: { project: Project; activeServiceCount: number; onLaunch: (n: string) => void; onAction: (label: string) => void }) {
+function GitChips({ project, git }: { project: Project; git: GitInfo | null }) {
+  const branch = git?.branch ?? project.branch;
+  const showCounts = git && (git.ahead > 0 || git.behind > 0);
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 16 }}>
+      <StatusChip label={project.repo} state="neutral" />
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 9px", background: "var(--surface)", border: "1px solid var(--line-soft)", borderRadius: "var(--r-chip)", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-secondary)" }}>
+        <Icon name="branch" size={12} /> {branch}
+      </span>
+      {showCounts && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "3px 9px", background: "var(--surface)", border: "1px solid var(--line-soft)", borderRadius: "var(--r-chip)", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-secondary)" }} title={`${git!.ahead} ahead · ${git!.behind} behind upstream`}>
+          {git!.ahead > 0 && <span>↑{git!.ahead}</span>}
+          {git!.behind > 0 && <span style={{ color: "var(--signal)" }}>↓{git!.behind}</span>}
+        </span>
+      )}
+      {git?.dirty && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 9px", background: "var(--surface)", border: "1px solid var(--line-soft)", borderRadius: "var(--r-chip)", fontSize: 11, fontWeight: 600, color: "var(--warning)" }} title="Uncommitted changes in the working tree">
+          <Node state="starting" size={6} /> Uncommitted
+        </span>
+      )}
+    </div>
+  );
+}
+
+function IdentityCard({ project, git, activeServiceCount, onLaunch, onAction }: { project: Project; git: GitInfo | null; activeServiceCount: number; onLaunch: (n: string) => void; onAction: (label: string) => void }) {
   const actions = [
     { label: "Open in editor", icon: "external" },
     { label: "Open directory", icon: "folder" },
@@ -28,19 +55,24 @@ function IdentityCard({ project, activeServiceCount, onLaunch, onAction }: { pro
         </div>
       </div>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 16 }}>
-        <StatusChip label={project.repo} state="neutral" />
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 9px", background: "var(--surface)", border: "1px solid var(--line-soft)", borderRadius: "var(--r-chip)", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-secondary)" }}>
-          <Icon name="branch" size={12} /> {project.branch}
-        </span>
-        {activeServiceCount > 0 && (
+      <GitChips project={project} git={git} />
+      {activeServiceCount > 0 && (
+        <div style={{ marginTop: 6 }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 9px", background: "var(--surface)", border: "1px solid var(--line-soft)", borderRadius: "var(--r-chip)", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-secondary)" }}>
             <Icon name="pulse" size={12} /> {activeServiceCount} active
           </span>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 12, color: "var(--text-secondary)", fontSize: 12.5 }}>
+      {git?.lastCommit && (
+        <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 12, color: "var(--text-secondary)", fontSize: 12, minWidth: 0 }}>
+          <Icon name="branch" size={12} style={{ flexShrink: 0 }} />
+          <span className="mono" style={{ color: "var(--text-muted)", flexShrink: 0 }}>{git.lastCommit.hash}</span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{git.lastCommit.summary}</span>
+        </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 10, color: "var(--text-secondary)", fontSize: 12.5 }}>
         <Icon name="clock" size={13} />
         Last opened <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{project.lastOpened}</span>
       </div>
@@ -77,8 +109,10 @@ function ActionRow({ label, icon, last, onClick }: { label: string; icon: string
   );
 }
 
-function SummaryPanel({ project, onAction }: { project: Project; onAction: (label: string) => void }) {
-  const s = project.summary;
+function SummaryPanel({ summary, onAction }: { summary: Summary | null; onAction: (label: string) => void }) {
+  const [showFull, setShowFull] = useState(false);
+  const source = summary?.source ?? "";
+  const isVault = source.toLowerCase().startsWith("obsidian");
   return (
     <section style={{
       background: "var(--surface)", border: "1px solid var(--line-soft)", borderRadius: "var(--r-panel)",
@@ -89,26 +123,40 @@ function SummaryPanel({ project, onAction }: { project: Project; onAction: (labe
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Icon name="book" size={15} style={{ color: "var(--text-secondary)" }} />
         <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Project Summary</h3>
-        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>(Obsidian)</span>
-        <span style={{ marginLeft: "auto" }}><Node state={s ? "running" : "stopped"} size={7} /></span>
+        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{isVault ? "(Obsidian)" : source ? `(${source})` : ""}</span>
+        <span style={{ marginLeft: "auto" }}><Node state={summary ? "running" : "stopped"} size={7} /></span>
       </div>
 
-      {s ? (
+      {summary ? (
         <div>
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-            {s.paragraphs.map((p, i) => (
+            {summary.paragraphs.map((p, i) => (
               <p key={i} style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: "var(--text-primary)", textWrap: "pretty" }}>{p}</p>
             ))}
           </div>
-          <div style={{ display: "flex", alignItems: "center", marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--line-soft)" }}>
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Updated <span style={{ color: "var(--text-secondary)" }}>{s.updated}</span></span>
-            <SecondaryBtn icon="external" onClick={() => onAction("Open in Notes")} style={{ marginLeft: "auto" }}>Open in Notes</SecondaryBtn>
+
+          {showFull && summary.markdown && (
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--line-soft)" }}>
+              <MarkdownView markdown={summary.markdown} />
+            </div>
+          )}
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--line-soft)" }}>
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Updated <span style={{ color: "var(--text-secondary)" }}>{summary.updated}</span></span>
+            <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+              {summary.markdown && (
+                <SecondaryBtn icon={showFull ? "collapse" : "book"} onClick={() => setShowFull((v) => !v)}>
+                  {showFull ? "Hide full" : "Read full"}
+                </SecondaryBtn>
+              )}
+              <SecondaryBtn icon="external" onClick={() => onAction("Open in Notes")}>Open in Notes</SecondaryBtn>
+            </span>
           </div>
         </div>
       ) : (
         <div style={{ marginTop: 12, padding: "18px 14px", borderRadius: 9, border: "1px dashed var(--line)", textAlign: "center" }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>No linked note found</div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Add a matching note in your Obsidian vault to see a summary here.</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>Add a README, or a matching note in your Obsidian vault, to see a summary here.</div>
         </div>
       )}
     </section>
@@ -141,15 +189,13 @@ function SubprojectsPanel({ project, onLaunch }: { project: Project; onLaunch: (
   );
 }
 
-// ---- Directory cross-section ------------------------------------------------
-interface FlatNode { node: TreeNode & { _path: string }; depth: number; expanded: boolean }
-
-function TreeRow({ node, depth, expanded, selected, onToggle, onSelect }: { node: TreeNode & { _path: string }; depth: number; expanded: boolean; selected: boolean; onToggle: (p: string) => void; onSelect: (n: string) => void }) {
+// ---- Directory cross-section (lazy, all projects) ---------------------------
+function TreeRow({ node, depth, expanded, selected, onClick }: { node: TreeNode; depth: number; expanded: boolean; selected: boolean; onClick: () => void }) {
   const [hover, setHover] = useState(false);
   const isDir = node.type === "dir";
   return (
     <div role="row"
-      onClick={() => (isDir ? onToggle(node._path) : onSelect(node.name))}
+      onClick={onClick}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{
         display: "grid", gridTemplateColumns: "1fr 86px 150px", alignItems: "center", gap: 10,
@@ -173,31 +219,57 @@ function TreeRow({ node, depth, expanded, selected, onToggle, onSelect }: { node
   );
 }
 
-function DirectoryPanel({ project, onSelectFile, selectedFile }: { project: Project; onSelectFile: (n: string) => void; selectedFile: string }) {
-  const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>({});
+function DirectoryPanel({ rootPath, selectedPath, onSelectFile }: { rootPath: string; selectedPath: string | null; onSelectFile: (path: string, name: string) => void }) {
+  const [rootNodes, setRootNodes] = useState<TreeNode[] | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [cache, setCache] = useState<Record<string, TreeNode[]>>({});
   const [dirQuery, setDirQuery] = useState("");
 
-  const toggle = (path: string) => setExpandedPaths((prev) => ({ ...prev, [path]: !prev[path] }));
+  useEffect(() => {
+    let alive = true;
+    setRootNodes(null);
+    setExpanded({});
+    setCache({});
+    listDir(rootPath, rootPath).then((nodes) => {
+      if (!alive) return;
+      setRootNodes(nodes);
+      // auto-select a README at the root
+      const readme = nodes.find((n) => n.type === "file" && /^readme\.md$/i.test(n.name));
+      if (readme) onSelectFile(`${rootPath}/${readme.name}`, readme.name);
+    });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootPath]);
 
-  const rows = useMemo(() => {
-    const out: FlatNode[] = [];
-    const walk = (nodes: TreeNode[], depth: number, prefix: string) => {
-      for (const n of nodes) {
-        if (dirQuery.trim() && depth === 0 && !n.name.toLowerCase().includes(dirQuery.trim().toLowerCase())) continue;
-        const path = prefix + "/" + n.name;
-        out.push({ node: { ...n, _path: path }, depth, expanded: !!expandedPaths[path] });
-        if (n.type === "dir" && expandedPaths[path] && n.children) walk(n.children, depth + 1, path);
-      }
-    };
-    walk(FIXTURE_TREE, 0, "");
-    return out;
-  }, [expandedPaths, dirQuery]);
+  const childrenOf = useCallback((node: TreeNode, path: string): TreeNode[] => node.children ?? cache[path] ?? [], [cache]);
+
+  const toggle = useCallback((node: TreeNode, path: string) => {
+    setExpanded((prev) => {
+      const next = { ...prev, [path]: !prev[path] };
+      return next;
+    });
+    // lazy-load children on first expand (backend returns one level at a time)
+    if (!expanded[path] && node.children == null && cache[path] == null) {
+      listDir(path, rootPath).then((kids) => setCache((c) => ({ ...c, [path]: kids })));
+    }
+  }, [expanded, cache, rootPath]);
+
+  const rows: { node: TreeNode; depth: number; path: string }[] = [];
+  const walk = (nodes: TreeNode[], depth: number, prefix: string) => {
+    for (const n of nodes) {
+      if (dirQuery.trim() && depth === 0 && !n.name.toLowerCase().includes(dirQuery.trim().toLowerCase())) continue;
+      const path = `${prefix}/${n.name}`;
+      rows.push({ node: n, depth, path });
+      if (n.type === "dir" && expanded[path]) walk(childrenOf(n, path), depth + 1, path);
+    }
+  };
+  if (rootNodes) walk(rootNodes, 0, rootPath);
 
   return (
     <section style={{ background: "var(--surface)", border: "1px solid var(--line-soft)", borderRadius: "var(--r-panel)", boxShadow: "var(--shadow-tile)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--line-soft)" }}>
         <span className="mono" style={{ fontSize: 12.5, color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 7 }}>
-          {project.path}
+          {rootPath}
           <Icon name="chevR" size={11} style={{ color: "var(--text-muted)" }} />
         </span>
         <IconBtn icon="copy" title="Copy path" size={26} />
@@ -217,29 +289,45 @@ function DirectoryPanel({ project, onSelectFile, selectedFile }: { project: Proj
       </div>
 
       <div role="tree" aria-label="Project directory" style={{ overflowY: "auto", maxHeight: 430 }}>
-        {rows.map(({ node, depth, expanded }) => (
-          <TreeRow key={node._path} node={node} depth={depth} expanded={expanded}
-            selected={selectedFile === node.name && node.type === "file"} onToggle={toggle} onSelect={onSelectFile} />
+        {rootNodes === null && <div style={{ padding: "26px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 12.5 }}>Reading directory…</div>}
+        {rootNodes && rootNodes.length === 0 && <div style={{ padding: "26px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 12.5 }}>This directory is empty.</div>}
+        {rows.map(({ node, depth, path }) => (
+          <TreeRow key={path} node={node} depth={depth} expanded={!!expanded[path]}
+            selected={node.type === "file" && selectedPath === path}
+            onClick={() => (node.type === "dir" ? toggle(node, path) : onSelectFile(path, node.name))} />
         ))}
       </div>
     </section>
   );
 }
 
-function FilePreview({ fileName, onAction }: { fileName: string; onAction: (label: string) => void }) {
-  const preview = FIXTURE_FILE_PREVIEWS[fileName];
+function FilePreview({ path, name, onAction }: { path: string | null; name: string | null; onAction: (label: string) => void }) {
+  const [preview, setPreview] = useState<FilePreviewData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!path) { setPreview(null); return; }
+    let alive = true;
+    setLoading(true);
+    previewFile(path).then((p) => { if (alive) { setPreview(p); setLoading(false); } });
+    return () => { alive = false; };
+  }, [path]);
+
+  if (!path) return null;
   return (
     <section style={{ background: "var(--surface)", border: "1px solid var(--line-soft)", borderRadius: "var(--r-panel)", boxShadow: "var(--shadow-tile)", overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "11px 16px", borderBottom: "1px solid var(--line-soft)" }}>
         <Icon name="file" size={15} style={{ color: "var(--text-secondary)" }} />
-        <span style={{ fontSize: 13.5, fontWeight: 700 }}>{fileName}</span>
+        <span style={{ fontSize: 13.5, fontWeight: 700 }}>{name}</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: 14, alignItems: "center", fontSize: 12, color: "var(--text-muted)" }}>
           {preview && <span>{preview.kind}</span>}
           {preview && <span className="mono" style={{ fontSize: 11.5 }}>{preview.size}</span>}
           {preview && <span>{preview.modified}</span>}
         </span>
       </div>
-      {preview ? (
+      {loading ? (
+        <div style={{ padding: "26px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 12.5 }}>Reading file…</div>
+      ) : preview ? (
         <div>
           <pre className="mono" style={{ margin: 0, padding: "14px 18px", fontSize: 12.5, lineHeight: 1.7, color: "var(--text-primary)", whiteSpace: "pre-wrap", overflowX: "auto" }}>{preview.lines.join("\n")}</pre>
           <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 16px 13px" }}>
@@ -271,7 +359,7 @@ function ProjectEmptyState({ onBrowse }: { onBrowse: () => void }) {
   );
 }
 
-// ---- Specimen tray (switch project from the Description page) ----------------
+// ---- Specimen tray ----------------------------------------------------------
 function TrayButton({ project, current, onSelect }: { project: Project; current: boolean; onSelect: (id: string) => void }) {
   const [hover, setHover] = useState(false);
   return (
@@ -306,39 +394,53 @@ interface ProjectPageProps {
   project: Project | null;
   projects: Project[];
   services: Service[];
+  vaultRoot?: string | null;
   onSelect: (id: string) => void;
   onLaunch: (name: string) => void;
   onAction: (label: string) => void;
   onBrowse: () => void;
 }
 
-export function ProjectPage({ project, projects, services, onSelect, onLaunch, onAction, onBrowse }: ProjectPageProps) {
-  const [selectedFile, setSelectedFile] = useState("README.md");
+export function ProjectPage({ project, projects, services, vaultRoot, onSelect, onLaunch, onAction, onBrowse }: ProjectPageProps) {
+  const [git, setGit] = useState<GitInfo | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+
+  const projectId = project?.id;
+  const projectPath = project?.path;
+
+  useEffect(() => {
+    if (!project) return;
+    let alive = true;
+    setGit(null);
+    setSummary(null);
+    setSelectedPath(null);
+    setSelectedName(null);
+    gitInfo(project.id, project.path).then((g) => { if (alive) setGit(g); });
+    getSummary(project, vaultRoot).then((s) => { if (alive) setSummary(s); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, projectPath, vaultRoot]);
 
   if (!project) return <ProjectEmptyState onBrowse={onBrowse} />;
 
   const activeServiceCount = services.filter((s) => s.projectId === project.id && (s.status === "running" || s.status === "starting")).length;
-  const isIdolmancer = project.id === "idolmancer";
+
+  const selectFile = (path: string, name: string) => { setSelectedPath(path); setSelectedName(name); };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18, paddingBottom: 8 }}>
       <SpecimenTray projects={projects} currentId={project.id} onSelect={onSelect} />
       <div style={{ display: "grid", gridTemplateColumns: "minmax(330px, 2fr) 3fr", gap: 20, alignItems: "start" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          <IdentityCard project={project} activeServiceCount={activeServiceCount} onLaunch={onLaunch} onAction={onAction} />
-          <SummaryPanel project={project} onAction={onAction} />
+          <IdentityCard project={project} git={git} activeServiceCount={activeServiceCount} onLaunch={onLaunch} onAction={onAction} />
+          <SummaryPanel summary={summary} onAction={onAction} />
           <SubprojectsPanel project={project} onLaunch={onLaunch} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          {isIdolmancer ? (
-            <DirectoryPanel project={project} selectedFile={selectedFile} onSelectFile={setSelectedFile} />
-          ) : (
-            <section style={{ background: "var(--surface)", border: "1px solid var(--line-soft)", borderRadius: "var(--r-panel)", boxShadow: "var(--shadow-tile)", padding: "40px 24px", textAlign: "center" }}>
-              <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-secondary)" }}>Directory index pending</div>
-              <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 5 }}>This prototype carries sample directory data for Idolmancer only.</div>
-            </section>
-          )}
-          {isIdolmancer && <FilePreview fileName={selectedFile} onAction={onAction} />}
+          <DirectoryPanel rootPath={project.path} selectedPath={selectedPath} onSelectFile={selectFile} />
+          <FilePreview path={selectedPath} name={selectedName} onAction={onAction} />
         </div>
       </div>
     </div>

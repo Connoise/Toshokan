@@ -1,22 +1,25 @@
-// C1/C2/C3 — project discovery, metadata, and summaries.
-import { USE_FIXTURES } from "./index";
+// C1 (discovery, Phase 1) + C3 (summary, Phase 2).
+import { invoke } from "@tauri-apps/api/core";
+import { backendActive } from "./index";
 import { FIXTURE_PROJECTS } from "./fixtures";
 import type { Project, Summary, ScanProgress } from "./types";
 
+// Phase 1 commands (list_projects/rescan) are not wired yet, so discovery still
+// reads fixtures even inside Tauri.
 export async function listProjects(): Promise<Project[]> {
-  if (USE_FIXTURES) return FIXTURE_PROJECTS;
-  // Phase 1+: return invoke<Project[]>("list_projects");
   return FIXTURE_PROJECTS;
 }
 
 export async function getProject(id: string): Promise<Project | null> {
-  if (USE_FIXTURES) return FIXTURE_PROJECTS.find((p) => p.id === id) ?? null;
   return FIXTURE_PROJECTS.find((p) => p.id === id) ?? null;
 }
 
-export async function getSummary(id: string): Promise<Summary | null> {
-  if (USE_FIXTURES) return FIXTURE_PROJECTS.find((p) => p.id === id)?.summary ?? null;
-  return null;
+// C3 (Phase 2): resolve README / Obsidian note for a project. Backed by core.
+export async function getSummary(project: Project, vaultRoot?: string | null): Promise<Summary | null> {
+  if (backendActive) {
+    return invoke<Summary | null>("get_summary", { path: project.path, name: project.name, vaultRoot: vaultRoot ?? null });
+  }
+  return project.summary ?? null;
 }
 
 export async function rescan(_root?: string): Promise<void> {
@@ -24,8 +27,8 @@ export async function rescan(_root?: string): Promise<void> {
 }
 
 export async function lastRefresh(): Promise<string> {
-  if (USE_FIXTURES) return "Today, 10:45 AM";
-  return new Date().toISOString();
+  // Phase 1+: invoke<string>("last_refresh")
+  return "Today, 10:45 AM";
 }
 
 /** Subscribe to scan progress events. Returns an unsubscribe fn. No-op under fixtures. */

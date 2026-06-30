@@ -178,6 +178,7 @@ function StatusStrip({ activeCount }: { activeCount: number }) {
 // ---- App --------------------------------------------------------------------
 export default function App() {
   const [appearance, setAppearance] = useState<Appearance>(DEFAULT_CONFIG.appearance);
+  const [vaultRoot, setVaultRoot] = useState<string | null>(DEFAULT_CONFIG.vaultRoot);
   const [tab, setTab] = useState<Tab>("projects");
   const [selectedId, setSelectedId] = useState("idolmancer");
   const [projects, setProjects] = useState<Project[]>([]);
@@ -191,7 +192,7 @@ export default function App() {
   useEffect(() => {
     listProjects().then(setProjects);
     listServices().then(setServices);
-    getConfig().then((c) => setAppearance(c.appearance));
+    getConfig().then((c) => { setAppearance(c.appearance); setVaultRoot(c.vaultRoot); });
   }, []);
 
   // theme attribute — transitions suppressed during the flip so surfaces snap atomically
@@ -278,7 +279,7 @@ export default function App() {
               <ProjectsPage projects={projects} services={services} selectedId={selectedId} query={query} onSelect={setSelectedId} onOpen={openProject} onLaunch={launch} />
             )}
             {tab === "project" && (
-              <ProjectPage project={selectedProject} projects={projects} services={services} onSelect={setSelectedId} onLaunch={launch} onAction={action} onBrowse={() => goTab("projects")} />
+              <ProjectPage project={selectedProject} projects={projects} services={services} vaultRoot={vaultRoot} onSelect={setSelectedId} onLaunch={launch} onAction={action} onBrowse={() => goTab("projects")} />
             )}
             {tab === "services" && (
               <ServicesPage services={services} query={query} onStart={startService} onStop={stopService} onRestart={restartService} onAction={action} onBrowse={() => goTab("projects")} />

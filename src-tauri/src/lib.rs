@@ -1,8 +1,10 @@
 // Toshokan — Rust core entry point.
 //
-// Phase 0: stands up the window over the Vite frontend (which runs on fixtures).
-// Later phases add the typed command surface (C1–C9) and the desktop-only
-// supervisor module behind a capability boundary. See PLAN.md §2, §4, §6.
+// Stands up the window over the Vite frontend. Phase 2 adds the C2/C3/C4
+// command surface (git/stack, summary/notes, fsview) backed by toshokan-core.
+// Phases 1/3/4 add discovery, the supervisor, system actions, and updates.
+
+mod commands;
 
 #[tauri::command]
 fn app_version() -> String {
@@ -12,7 +14,14 @@ fn app_version() -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![app_version])
+        .invoke_handler(tauri::generate_handler![
+            app_version,
+            commands::git_info,
+            commands::detect_stack,
+            commands::list_dir,
+            commands::preview_file,
+            commands::get_summary,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Toshokan");
 }
