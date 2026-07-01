@@ -1,4 +1,6 @@
 // C8 — settings persistence.
+import { invoke } from "@tauri-apps/api/core";
+import { backendActive } from "./index";
 import type { Config } from "./types";
 
 export const DEFAULT_CONFIG: Config = {
@@ -23,6 +25,7 @@ export const DEFAULT_CONFIG: Config = {
 const LS_KEY = "toshokan.config";
 
 export async function getConfig(): Promise<Config> {
+  if (backendActive) return invoke<Config>("get_config");
   try {
     const raw = typeof localStorage !== "undefined" && localStorage.getItem(LS_KEY);
     if (raw) return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
@@ -33,6 +36,7 @@ export async function getConfig(): Promise<Config> {
 }
 
 export async function patchConfig(patch: Partial<Config>): Promise<Config> {
+  if (backendActive) return invoke<Config>("patch_config", { patch });
   const next = { ...(await getConfig()), ...patch };
   try {
     if (typeof localStorage !== "undefined") localStorage.setItem(LS_KEY, JSON.stringify(next));

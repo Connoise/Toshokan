@@ -5,6 +5,41 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct Subproject {
+    pub name: String,
+    pub desc: String,
+    pub last_opened: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// A discovered project. Produced by the scanner (C1) and enriched with stack,
+/// git, and summary (C2/C3). `service_count`/`service` are filled later by the
+/// supervisor + overlay manifests (Phase 3).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub desc: String,
+    pub tech: Vec<String>,
+    pub path: String,
+    pub last_opened: String,
+    pub last_opened_at: i64, // epoch seconds (sort)
+    pub sort_key: i64,
+    pub branch: String,
+    pub repo: String, // "Local only" or a short remote label
+    pub service_count: u32,
+    pub subprojects: Vec<Subproject>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<Summary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git: Option<GitInfo>,
+    pub updatable: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct CommitInfo {
     pub hash: String,
     pub summary: String,

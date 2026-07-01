@@ -6,8 +6,8 @@ import { ProjectPage } from "./pages/ProjectPage";
 import { ServicesPage } from "./pages/ServicesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import {
-  listProjects, listServices, getConfig, patchConfig, DEFAULT_CONFIG, isTauri,
-  type Project, type Service, type Appearance,
+  listProjects, listServices, getConfig, patchConfig, lastRefresh, onScanProgress, DEFAULT_CONFIG, isTauri,
+  type Project, type Service, type Appearance, type Config,
 } from "./ipc";
 
 type Tab = "projects" | "project" | "services" | "settings";
@@ -115,7 +115,7 @@ function NavRail({ tab, setTab, hasSelection, showSubstrate }: { tab: Tab; setTa
 // ---- Context header ---------------------------------------------------------
 const PAGE_SUBTITLES: Record<Tab, string> = { projects: "Project Catalog", project: "Description", services: "Services", settings: "Settings" };
 
-function ContextHeader({ tab, query, setQuery, activeCount, onServices, searchRef }: { tab: Tab; query: string; setQuery: (q: string) => void; activeCount: number; onServices: () => void; searchRef: React.RefObject<HTMLInputElement> }) {
+function ContextHeader({ tab, query, setQuery, activeCount, roots, onServices, searchRef }: { tab: Tab; query: string; setQuery: (q: string) => void; activeCount: number; roots: string[]; onServices: () => void; searchRef: React.RefObject<HTMLInputElement> }) {
   return (
     <header style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 28px 14px", flexShrink: 0 }}>
       <div style={{ minWidth: 150 }}>
@@ -123,8 +123,9 @@ function ContextHeader({ tab, query, setQuery, activeCount, onServices, searchRe
         <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 2 }}>{PAGE_SUBTITLES[tab]}</div>
       </div>
 
-      <select aria-label="Workspace root" defaultValue="~/Projects" style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-primary)", background: "var(--surface)", border: "1px solid var(--line-soft)", borderRadius: 9, padding: "8px 10px", boxShadow: "var(--shadow-chip)" }}>
-        <option>~/Projects</option>
+      <select aria-label="Workspace root" value={roots[0] ?? ""} onChange={() => {}} style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-primary)", background: "var(--surface)", border: "1px solid var(--line-soft)", borderRadius: 9, padding: "8px 10px", boxShadow: "var(--shadow-chip)" }}>
+        {roots.length === 0 && <option value="">No roots</option>}
+        {roots.map((r) => <option key={r} value={r}>{r}</option>)}
       </select>
 
       <div style={{ flex: 1, maxWidth: 420, marginLeft: "auto", display: "flex", alignItems: "center", gap: 9, background: "var(--surface)", border: "1px solid var(--line-soft)", borderRadius: 10, padding: "8px 12px", boxShadow: "var(--shadow-chip)" }}>
@@ -160,12 +161,12 @@ function StripItem({ icon, label, value, state }: { icon: string; label: string;
   );
 }
 
-function StatusStrip({ activeCount }: { activeCount: number }) {
+function StatusStrip({ activeCount, workspaceRoot, refreshed }: { activeCount: number; workspaceRoot: string; refreshed: string }) {
   return (
     <footer style={{ display: "flex", alignItems: "center", gap: 26, padding: "10px 28px", borderTop: "1px solid var(--line-soft)", background: "var(--bg-substrate)", flexShrink: 0, overflow: "hidden" }}>
-      <StripItem icon="folder" label="Workspace Root" value="~/Projects" />
+      <StripItem icon="folder" label="Workspace Root" value={workspaceRoot} />
       <StripItem icon="pulse" label="Active Services" value={String(activeCount)} />
-      <StripItem icon="refresh" label="Last Refresh" value="Today, 10:45 AM" state="running" />
+      <StripItem icon="refresh" label="Last Refresh" value={refreshed} state="running" />
       <StripItem icon="layers" label="Local Status" value="All data is local" state="running" />
       <span aria-hidden="true" style={{ marginLeft: "auto", minWidth: 0, flexShrink: 1, display: "flex", justifyContent: "flex-end", overflow: "hidden" }}>
         <img className="tsk-icon-light" src="/assets/substrate-corner.png" alt="" style={{ height: 18, mixBlendMode: "multiply", opacity: 0.85 }} />
@@ -177,23 +178,33 @@ function StatusStrip({ activeCount }: { activeCount: number }) {
 
 // ---- App --------------------------------------------------------------------
 export default function App() {
-  const [appearance, setAppearance] = useState<Appearance>(DEFAULT_CONFIG.appearance);
-  const [vaultRoot, setVaultRoot] = useState<string | null>(DEFAULT_CONFIG.vaultRoot);
+  const [config, setConfig] = useState<Config>(DEFAULT_CONFIG);
   const [tab, setTab] = useState<Tab>("projects");
   const [selectedId, setSelectedId] = useState("idolmancer");
   const [projects, setProjects] = useState<Project[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [refreshed, setRefreshed] = useState("—");
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // initial data + persisted appearance
-  useEffect(() => {
+  const appearance = config.appearance;
+  const vaultRoot = config.vaultRoot;
+
+  const refreshCatalog = useCallback(() => {
     listProjects().then(setProjects);
-    listServices().then(setServices);
-    getConfig().then((c) => { setAppearance(c.appearance); setVaultRoot(c.vaultRoot); });
+    lastRefresh().then(setRefreshed);
   }, []);
+
+  // initial data + persisted config; live-refresh the catalog on scan completion
+  useEffect(() => {
+    getConfig().then(setConfig);
+    listServices().then(setServices);
+    refreshCatalog();
+    const off = onScanProgress((p) => { if (p.done) refreshCatalog(); });
+    return off;
+  }, [refreshCatalog]);
 
   // theme attribute — transitions suppressed during the flip so surfaces snap atomically
   useEffect(() => {
@@ -204,10 +215,14 @@ export default function App() {
     return () => clearTimeout(id);
   }, [appearance.theme]);
 
+  const patch = useCallback((partial: Partial<Config>) => {
+    patchConfig(partial).then(setConfig);
+  }, []);
+
   const updateAppearance = useCallback(<K extends keyof Appearance>(key: K, value: Appearance[K]) => {
-    setAppearance((prev) => {
-      const next = { ...prev, [key]: value };
-      patchConfig({ appearance: next });
+    setConfig((prev) => {
+      const next = { ...prev, appearance: { ...prev.appearance, [key]: value } };
+      patchConfig({ appearance: next.appearance });
       return next;
     });
   }, []);
@@ -266,6 +281,8 @@ export default function App() {
   const activeCount = services.filter((s) => s.status === "running" || s.status === "starting").length;
   const selectedProject = projects.find((p) => p.id === selectedId) || null;
   const dense = appearance.density === "compact";
+  const roots = config.directories.map((d) => d.path);
+  const workspaceRoot = roots[0] ?? "—";
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "var(--bg-base)", fontSize: dense ? 13 : 14 }}>
@@ -273,7 +290,7 @@ export default function App() {
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         <NavRail tab={tab} setTab={goTab} hasSelection={!!selectedProject} showSubstrate={appearance.railEmblem} />
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-          <ContextHeader tab={tab} query={query} setQuery={setQuery} activeCount={activeCount} onServices={() => goTab("services")} searchRef={searchRef} />
+          <ContextHeader tab={tab} query={query} setQuery={setQuery} activeCount={activeCount} roots={roots} onServices={() => goTab("services")} searchRef={searchRef} />
           <main data-screen-label={"Tab: " + tab} style={{ flex: 1, overflowY: "auto", padding: dense ? "4px 28px 18px" : "6px 28px 22px", minHeight: 0 }}>
             {tab === "projects" && (
               <ProjectsPage projects={projects} services={services} selectedId={selectedId} query={query} onSelect={setSelectedId} onOpen={openProject} onLaunch={launch} />
@@ -285,10 +302,10 @@ export default function App() {
               <ServicesPage services={services} query={query} onStart={startService} onStop={stopService} onRestart={restartService} onAction={action} onBrowse={() => goTab("projects")} />
             )}
             {tab === "settings" && (
-              <SettingsPage appearance={appearance} onAppearanceChange={updateAppearance} />
+              <SettingsPage config={config} appearance={appearance} onAppearanceChange={updateAppearance} onPatch={patch} />
             )}
           </main>
-          <StatusStrip activeCount={activeCount} />
+          <StatusStrip activeCount={activeCount} workspaceRoot={workspaceRoot} refreshed={refreshed} />
         </div>
       </div>
 

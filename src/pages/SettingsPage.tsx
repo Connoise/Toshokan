@@ -1,9 +1,9 @@
 // Toshokan — Settings page (interface + project-management preferences).
-// The prototype's dev Tweaks panel is gone (PLAN Q19); these real controls
-// drive the live appearance state, lifted into App and persisted via config.
+// Phase 1 (C8): directories, vault root, and management prefs read from and
+// persist to the config. Appearance drives live theme state.
 import { useState, type ReactNode } from "react";
 import { Icon, BrandMark, PrimaryBtn, SecondaryBtn, IconBtn } from "../components/shared";
-import type { Appearance } from "../ipc";
+import type { Appearance, Config, WorkspaceDirectory } from "../ipc";
 
 // ---- Primitive controls -----------------------------------------------------
 function Switch({ checked, onChange, labelledby }: { checked: boolean; onChange: (v: boolean) => void; labelledby?: string }) {
@@ -66,6 +66,18 @@ function Select({ value, options, onChange }: { value: string; options: string[]
   );
 }
 
+// commits on blur / Enter so we don't patch config on every keystroke
+function CommitInput({ value, placeholder, width = 240, onCommit }: { value: string; placeholder?: string; width?: number; onCommit: (v: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  return (
+    <input value={draft} placeholder={placeholder} className="mono"
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => onCommit(draft)}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+      style={{ padding: "8px 12px", fontSize: 13, width, border: "1px solid var(--line)", borderRadius: "var(--r-control)", background: "var(--surface)", color: "var(--text-primary)" }} />
+  );
+}
+
 // ---- Layout pieces ----------------------------------------------------------
 function SettingsCard({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) {
   return (
@@ -92,31 +104,29 @@ function Row({ id, label, hint, children, last }: { id?: string; label: string; 
 }
 
 // ---- Project directories ----------------------------------------------------
-function DirectoryManager() {
-  const [dirs, setDirs] = useState([
-    { path: "~/Projects", scan: true },
-  ]);
+function DirectoryManager({ directories, onChange }: { directories: WorkspaceDirectory[]; onChange: (dirs: WorkspaceDirectory[]) => void }) {
   const [draft, setDraft] = useState("");
-
   const add = () => {
     const v = draft.trim();
-    if (!v) return;
-    setDirs((d) => [...d, { path: v, scan: true }]);
+    if (!v || directories.some((d) => d.path === v)) { setDraft(""); return; }
+    onChange([...directories, { path: v, autoScan: true }]);
     setDraft("");
   };
-
   return (
     <div>
       <div style={{ padding: "6px 0" }}>
-        {dirs.map((d, i) => (
+        {directories.length === 0 && (
+          <div style={{ padding: "14px 22px", fontSize: 12.5, color: "var(--text-muted)" }}>No directories yet — add the folder that holds your projects.</div>
+        )}
+        {directories.map((d, i) => (
           <div key={d.path + i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 22px", borderBottom: "1px solid var(--line-soft)" }}>
             <Icon name="folder" size={18} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
             <span className="mono" style={{ fontSize: 13, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.path}</span>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-secondary)", flexShrink: 0 }}>
               <span className="micro">Auto-scan</span>
-              <Switch checked={d.scan} onChange={(v) => setDirs((arr) => arr.map((x, j) => (j === i ? { ...x, scan: v } : x)))} />
+              <Switch checked={d.autoScan} onChange={(v) => onChange(directories.map((x, j) => (j === i ? { ...x, autoScan: v } : x)))} />
             </label>
-            <IconBtn icon="trash" title={"Remove " + d.path} size={30} onClick={() => setDirs((arr) => arr.filter((_, j) => j !== i))} />
+            <IconBtn icon="trash" title={"Remove " + d.path} size={30} onClick={() => onChange(directories.filter((_, j) => j !== i))} />
           </div>
         ))}
       </div>
@@ -134,23 +144,17 @@ function DirectoryManager() {
 
 // ---- Page -------------------------------------------------------------------
 interface SettingsPageProps {
+  config: Config;
   appearance: Appearance;
   onAppearanceChange: <K extends keyof Appearance>(key: K, value: Appearance[K]) => void;
+  onPatch: (patch: Partial<Config>) => void;
 }
 
-export function SettingsPage({ appearance, onAppearanceChange }: SettingsPageProps) {
+export function SettingsPage({ config, appearance, onAppearanceChange, onPatch }: SettingsPageProps) {
   const isDark = appearance.theme === "Basalt Dark";
-
-  const [mgmt, setMgmt] = useState({
-    editor: "VS Code",
-    terminal: "Default terminal",
-    restoreSession: true,
-    confirmStop: true,
-    rescanOnLaunch: false,
-    defaultBranch: "main",
-    vaultRoot: "",
-  });
-  const setM = <K extends keyof typeof mgmt>(k: K, v: (typeof mgmt)[K]) => setMgmt((m) => ({ ...m, [k]: v }));
+  const m = config.management;
+  const setM = <K extends keyof Config["management"]>(k: K, v: Config["management"][K]) =>
+    onPatch({ management: { ...m, [k]: v } });
 
   return (
     <div style={{ maxWidth: 820, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20, paddingBottom: 12 }}>
@@ -170,36 +174,34 @@ export function SettingsPage({ appearance, onAppearanceChange }: SettingsPagePro
         </Row>
       </SettingsCard>
 
-      <SettingsCard title="Project Directories" desc="Folders Toshokan watches for projects. Auto-scan picks up new projects on launch.">
-        <DirectoryManager />
+      <SettingsCard title="Project Directories" desc="Folders Toshokan watches for projects. Auto-scan picks up new projects live.">
+        <DirectoryManager directories={config.directories} onChange={(dirs) => onPatch({ directories: dirs })} />
       </SettingsCard>
 
       <SettingsCard title="Notes" desc="Where Toshokan looks for an Obsidian note matching each project (read-only).">
         <Row id="set-vault" label="Obsidian vault root" hint="Absolute path to your vault; a same-named note becomes the project summary." last>
-          <input value={mgmt.vaultRoot} onChange={(e) => setM("vaultRoot", e.target.value)} placeholder="~/Obsidian/Vault" className="mono"
-            style={{ padding: "8px 12px", fontSize: 13, width: 240, border: "1px solid var(--line)", borderRadius: "var(--r-control)", background: "var(--surface)", color: "var(--text-primary)" }} />
+          <CommitInput value={config.vaultRoot ?? ""} placeholder="~/Obsidian/Vault" onCommit={(v) => onPatch({ vaultRoot: v.trim() || null })} />
         </Row>
       </SettingsCard>
 
       <SettingsCard title="Project Management" desc="Defaults applied when launching, opening, and managing projects.">
         <Row id="set-editor" label="Default editor" hint="Opens when you choose “Open in editor”.">
-          <Select value={mgmt.editor} options={["VS Code", "Cursor", "Neovim", "Zed", "Sublime Text"]} onChange={(v) => setM("editor", v)} />
+          <Select value={m.editor} options={["VS Code", "Cursor", "Neovim", "Zed", "Sublime Text"]} onChange={(v) => setM("editor", v)} />
         </Row>
         <Row id="set-terminal" label="Default terminal" hint="Used for “Open terminal” and launch commands.">
-          <Select value={mgmt.terminal} options={["Default terminal", "GNOME Terminal", "Konsole", "Alacritty", "Windows Terminal"]} onChange={(v) => setM("terminal", v)} />
+          <Select value={m.terminal} options={["Default terminal", "GNOME Terminal", "Konsole", "Alacritty", "Windows Terminal"]} onChange={(v) => setM("terminal", v)} />
         </Row>
         <Row id="set-branch" label="Branch to display" hint="Which branch the project header reports by default.">
-          <input value={mgmt.defaultBranch} onChange={(e) => setM("defaultBranch", e.target.value)} className="mono"
-            style={{ padding: "8px 12px", fontSize: 13, width: 180, border: "1px solid var(--line)", borderRadius: "var(--r-control)", background: "var(--surface)", color: "var(--text-primary)" }} />
+          <CommitInput value={m.defaultBranch} width={180} onCommit={(v) => setM("defaultBranch", v.trim() || "main")} />
         </Row>
         <Row id="set-restore" label="Restore last session" hint="Reopen the project and tab you were last viewing.">
-          <Switch checked={mgmt.restoreSession} onChange={(v) => setM("restoreSession", v)} labelledby="set-restore" />
+          <Switch checked={m.restoreSession} onChange={(v) => setM("restoreSession", v)} labelledby="set-restore" />
         </Row>
         <Row id="set-rescan" label="Re-scan directories on launch" hint="Refresh the project list from disk every time a project launches.">
-          <Switch checked={mgmt.rescanOnLaunch} onChange={(v) => setM("rescanOnLaunch", v)} labelledby="set-rescan" />
+          <Switch checked={m.rescanOnLaunch} onChange={(v) => setM("rescanOnLaunch", v)} labelledby="set-rescan" />
         </Row>
         <Row id="set-confirm" label="Confirm before stopping services" hint="Ask for confirmation before stopping a running service." last>
-          <Switch checked={mgmt.confirmStop} onChange={(v) => setM("confirmStop", v)} labelledby="set-confirm" />
+          <Switch checked={m.confirmStop} onChange={(v) => setM("confirmStop", v)} labelledby="set-confirm" />
         </Row>
       </SettingsCard>
 
