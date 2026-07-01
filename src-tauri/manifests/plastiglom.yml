@@ -1,0 +1,23 @@
+# Plastiglom — overlay manifest (PLAN §8).
+name: Plastiglom
+launch: python -m plastiglom.apps.web_app --host 127.0.0.1 --port 8001
+env: [".env"]
+update:
+  remote: origin
+  install: pip install -e .
+services:
+  - name: Web App
+    kind: server
+    runtime: uvicorn / FastAPI
+    command: python -m plastiglom.apps.web_app --host 127.0.0.1 --port 8001
+    port: 8001
+  - name: Scheduler Fire
+    kind: job
+    runtime: Python
+    command: python -m plastiglom.apps.scheduler
+    schedule: "30 7,21 * * *"
+  - name: LLM Scheduler
+    kind: job
+    runtime: Python
+    command: python -m plastiglom.apps.llm_scheduler run
+    schedule: "0 * * * *"

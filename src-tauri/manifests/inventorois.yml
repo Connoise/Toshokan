@@ -1,0 +1,13 @@
+# Inventorois — overlay manifest (PLAN §8).
+name: Inventorois
+launch: npm run dev
+env: [".env"]
+update:
+  remote: origin
+  install: npm install
+services:
+  - name: Dev Server
+    kind: server
+    runtime: Vite
+    command: npm run dev
+    port: 3000

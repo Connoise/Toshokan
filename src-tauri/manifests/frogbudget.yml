@@ -1,0 +1,13 @@
+# Frog Budget — overlay manifest (PLAN §8).
+name: Frog Budget
+launch: npm run dev
+env: [".env"]
+update:
+  remote: origin
+  install: npm install
+services:
+  - name: Dev Server
+    kind: server
+    runtime: Vite
+    command: npm run dev
+    port: 5173

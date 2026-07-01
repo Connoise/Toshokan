@@ -154,7 +154,7 @@ fn dir_name(path: &Path) -> String {
 }
 
 /// Lowercased, alphanumeric-only id (e.g. "Frog Budget" -> "frogbudget").
-fn slugify(name: &str) -> String {
+pub fn slugify(name: &str) -> String {
     name.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
 }
 

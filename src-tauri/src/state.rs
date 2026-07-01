@@ -61,6 +61,8 @@ pub fn run_scan(app: &AppHandle, root: Option<String>) {
 
     *state.projects.lock().unwrap() = all.clone();
     *state.last_refresh.lock().unwrap() = Some(now_epoch());
+    // rebuild service specs from the freshly discovered projects' manifests
+    crate::services::sync_specs(app);
     let _ = app.emit("scan://progress", ScanProgress { root: String::new(), found: all.len() as u32, done: true });
 }
 

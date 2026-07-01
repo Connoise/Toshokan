@@ -102,3 +102,58 @@ pub struct Summary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub markdown: Option<String>,
 }
+
+// ---- Services (C5/C6) --------------------------------------------------------
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceKind {
+    Server,
+    Daemon,
+    Job,
+}
+
+impl ServiceKind {
+    pub fn from_str_loose(s: &str) -> ServiceKind {
+        match s.to_lowercase().as_str() {
+            "daemon" => ServiceKind::Daemon,
+            "job" => ServiceKind::Job,
+            _ => ServiceKind::Server,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceState {
+    Running,
+    Starting,
+    Stopped,
+    Failed,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LogSeverity {
+    Info,
+    Ok,
+    Warn,
+    Error,
+    Plain,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LogLine {
+    pub ts: String,
+    pub severity: LogSeverity,
+    pub text: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceError {
+    pub code: String,
+    pub message: String,
+    pub time: String,
+}

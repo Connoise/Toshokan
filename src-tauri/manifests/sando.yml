@@ -1,0 +1,17 @@
+# Sando — overlay manifest (PLAN §8). systemd units are the remote production
+# deployment; locally these run as supervised children.
+name: Sando
+launch: python -m uvicorn sando_web.app:app --host 127.0.0.1 --port 8765
+env: [".env"]
+update:
+  remote: origin
+services:
+  - name: Web App
+    kind: server
+    runtime: uvicorn / FastAPI
+    command: python -m uvicorn sando_web.app:app --host 127.0.0.1 --port 8765
+    port: 8765
+  - name: Reminder Daemon
+    kind: daemon
+    runtime: Python Daemon
+    command: python reminder_daemon.py

@@ -5,12 +5,21 @@
 //! wraps these functions as `#[tauri::command]`s (see ../src/commands.rs).
 
 pub mod config;
+pub mod envfile;
 pub mod fsview;
+pub mod logparse;
+pub mod manifest;
 pub mod meta;
 pub mod model;
 pub mod scanner;
+pub mod schedule;
 pub mod summary;
+pub mod supervisor;
 pub mod timefmt;
 
 pub use config::Config;
-pub use model::{CommitInfo, FilePreview, GitInfo, NodeType, Project, Subproject, Summary, TreeNode};
+pub use model::{
+    CommitInfo, FilePreview, GitInfo, LogLine, LogSeverity, NodeType, Project, ServiceError,
+    ServiceKind, ServiceState, Subproject, Summary, TreeNode,
+};
+pub use supervisor::{ServiceSpec, Supervisor, SupervisorConfig, SupervisorEvent};

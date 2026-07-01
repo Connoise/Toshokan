@@ -1,0 +1,21 @@
+# Jagaimo — overlay manifest (PLAN §8). The production tailnet viewer is remote
+# and out of supervision scope; the ingest job runs on demand here.
+name: Jagaimo
+launch: npm run dev
+update:
+  remote: origin
+services:
+  - name: Viewer Dev
+    kind: server
+    runtime: Vite
+    command: npm run dev
+    cwd: viewer
+    port: 5173
+    env: ["viewer/.env"]
+  - name: Ingest Snapshot
+    kind: job
+    runtime: Python
+    command: .venv/bin/python ingest.py
+    cwd: core
+    schedule: "*/15 * * * *"
+    env: ["core/.env"]

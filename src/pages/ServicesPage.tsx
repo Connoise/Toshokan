@@ -1,6 +1,9 @@
 // Toshokan — Services page (active seams table).
-import { useState } from "react";
+// Phase 3: the expanded drawer backfills its log from the supervisor and
+// streams new lines live; Save/Clear act on the real buffer.
+import { useState, useEffect } from "react";
 import { Icon, Node, SpecimenFrame, StatusChip, SecondaryBtn, IconBtn } from "../components/shared";
+import { backendActive, getLog, saveLog, clearLog, onServiceLog, toLogEntry } from "../ipc";
 import type { Service, ServiceState, LogEntry } from "../ipc";
 
 const STATUS_META: Record<ServiceState, { label: string; node: ServiceState; pulse: boolean }> = {
@@ -71,8 +74,33 @@ function DetailField({ label, value, mono = false, chip = false, icon = null }: 
   );
 }
 
-function ServiceDetail({ svc }: { svc: Service }) {
+function ServiceDetail({ svc, notify }: { svc: Service; notify: (msg: string) => void }) {
   const d = svc.detail;
+  const [log, setLog] = useState<LogEntry[]>(d.log);
+
+  // backfill from the supervisor's ring buffer, then stream new lines live
+  useEffect(() => {
+    if (!backendActive) { setLog(d.log); return; }
+    let alive = true;
+    getLog(svc.id).then((lines) => { if (alive) setLog(lines.map(toLogEntry)); });
+    const off = onServiceLog(({ id, line }) => {
+      if (id !== svc.id) return;
+      setLog((prev) => [...prev.slice(-1999), toLogEntry(line)]);
+    });
+    return () => { alive = false; off(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [svc.id]);
+
+  const onSave = () => {
+    if (!backendActive) { notify("Save log — pending backend"); return; }
+    saveLog(svc.id).then((path) => notify(path ? `Log saved: ${path}` : "Log saved")).catch((e) => notify(String(e)));
+  };
+  const onClear = () => {
+    clearLog(svc.id);
+    setLog([]);
+    notify("Log cleared.");
+  };
+
   return (
     <div style={{ margin: "0 14px 14px", padding: 18, background: "var(--bg-base)", border: "1px solid var(--line-soft)", borderRadius: 12, display: "grid", gridTemplateColumns: "minmax(280px, 2fr) 3fr", gap: 20 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -88,11 +116,11 @@ function ServiceDetail({ svc }: { svc: Service }) {
           <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-secondary)" }}>Recent output</span>
           <Node state={svc.status === "failed" ? "failed" : svc.status === "stopped" ? "stopped" : "running"} size={6} pulse={svc.status === "running"} />
           <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-            <IconBtn icon="download" title="Save log" size={26} />
-            <IconBtn icon="trash" title="Clear log" size={26} />
+            <IconBtn icon="download" title="Save log" size={26} onClick={onSave} />
+            <IconBtn icon="trash" title="Clear log" size={26} onClick={onClear} />
           </span>
         </div>
-        <LogConsole lines={d.log} />
+        <LogConsole lines={log} />
       </div>
     </div>
   );
@@ -106,9 +134,10 @@ interface RowProps {
   onStop: (id: string) => void;
   onRestart: (id: string) => void;
   onAction: (label: string) => void;
+  notify: (msg: string) => void;
 }
 
-function ServiceRow({ svc, expanded, onToggle, onStart, onStop, onRestart, onAction }: RowProps) {
+function ServiceRow({ svc, expanded, onToggle, onStart, onStop, onRestart, onAction, notify }: RowProps) {
   const [hover, setHover] = useState(false);
   const meta = STATUS_META[svc.status];
   const live = svc.status === "running" || svc.status === "starting";
@@ -188,7 +217,7 @@ function ServiceRow({ svc, expanded, onToggle, onStart, onStop, onRestart, onAct
         </div>
       )}
 
-      {expanded && <ServiceDetail svc={svc} />}
+      {expanded && <ServiceDetail svc={svc} notify={notify} />}
     </div>
   );
 }
@@ -200,10 +229,11 @@ interface ServicesPageProps {
   onStop: (id: string) => void;
   onRestart: (id: string) => void;
   onAction: (label: string) => void;
+  notify: (msg: string) => void;
   onBrowse: () => void;
 }
 
-export function ServicesPage({ services, query, onStart, onStop, onRestart, onAction, onBrowse }: ServicesPageProps) {
+export function ServicesPage({ services, query, onStart, onStop, onRestart, onAction, notify, onBrowse }: ServicesPageProps) {
   const [expandedId, setExpandedId] = useState<string | null>("svc-plastiglom");
 
   const toggle = (id: string, forceOpen = false) => setExpandedId((cur) => (forceOpen ? id : cur === id ? null : id));
@@ -223,7 +253,7 @@ export function ServicesPage({ services, query, onStart, onStop, onRestart, onAc
       </div>
 
       {filtered.map((svc) => (
-        <ServiceRow key={svc.id} svc={svc} expanded={expandedId === svc.id} onToggle={toggle} onStart={onStart} onStop={onStop} onRestart={onRestart} onAction={onAction} />
+        <ServiceRow key={svc.id} svc={svc} expanded={expandedId === svc.id} onToggle={toggle} onStart={onStart} onStop={onStop} onRestart={onRestart} onAction={onAction} notify={notify} />
       ))}
 
       {filtered.length === 0 && (

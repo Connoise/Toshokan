@@ -1,0 +1,11 @@
+# Kani-miso — overlay manifest (PLAN §8).
+name: Kani-miso
+launch: python scripts/processor.py
+env: ["config/.env"]
+update:
+  remote: origin
+services:
+  - name: Capture Processor
+    kind: daemon
+    runtime: Python
+    command: python scripts/processor.py

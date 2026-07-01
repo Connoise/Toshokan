@@ -6,9 +6,12 @@ import { ProjectPage } from "./pages/ProjectPage";
 import { ServicesPage } from "./pages/ServicesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import {
-  listProjects, listServices, getConfig, patchConfig, lastRefresh, onScanProgress, DEFAULT_CONFIG, isTauri,
+  listProjects, listServices, getConfig, patchConfig, lastRefresh, onScanProgress, onServiceStatus,
+  startService as ipcStartService, stopService as ipcStopService, restartService as ipcRestartService,
+  DEFAULT_CONFIG, isTauri, backendActive,
   type Project, type Service, type Appearance, type Config,
 } from "./ipc";
+import { formatUptime } from "./lib/format";
 
 type Tab = "projects" | "project" | "services" | "settings";
 
@@ -197,14 +200,37 @@ export default function App() {
     lastRefresh().then(setRefreshed);
   }, []);
 
-  // initial data + persisted config; live-refresh the catalog on scan completion
+  // initial data + persisted config; live-refresh catalog + services on scan completion
   useEffect(() => {
     getConfig().then(setConfig);
     listServices().then(setServices);
     refreshCatalog();
-    const off = onScanProgress((p) => { if (p.done) refreshCatalog(); });
+    const off = onScanProgress((p) => {
+      if (p.done) {
+        refreshCatalog();
+        listServices().then(setServices);
+      }
+    });
     return off;
   }, [refreshCatalog]);
+
+  // supervisor pushes (Phase 3): merge live status/telemetry into the table;
+  // a failure re-fetches the list so the error banner carries the details
+  useEffect(() => {
+    if (!backendActive) return;
+    const off = onServiceStatus((u) => {
+      setServices((prev) => prev.map((s) => s.id === u.id ? {
+        ...s,
+        status: u.status,
+        pid: u.pid ?? null,
+        uptime: u.uptimeSec != null ? formatUptime(u.uptimeSec) : null,
+        ram: u.ramMb ?? (u.status === "running" || u.status === "starting" ? s.ram : null),
+        error: u.status === "failed" ? s.error : undefined,
+      } : s));
+      if (u.status === "failed") listServices().then(setServices);
+    });
+    return off;
+  }, []);
 
   // theme attribute — transitions suppressed during the flip so surfaces snap atomically
   useEffect(() => {
@@ -245,6 +271,7 @@ export default function App() {
 
   // the 'starting' Megane service settles into running after a while (fixture demo)
   useEffect(() => {
+    if (backendActive) return;
     const id = setTimeout(() => {
       setServices((prev) => prev.map((s) => (s.id === "svc-megane" && s.status === "starting" ? { ...s, status: "running", pid: "21073", uptime: "1m" } : s)));
     }, 9000);
@@ -263,12 +290,28 @@ export default function App() {
   const startService = (id: string) => {
     setStatus(id, "starting", { pid: null, uptime: null, ram: null });
     showToast("Starting service...");
+    if (backendActive) {
+      ipcStartService(id).catch((e) => { showToast(String(e)); setStatus(id, "stopped"); });
+      return; // supervisor events drive the rest
+    }
     setTimeout(() => setStatus(id, "running", { pid: String(12000 + Math.floor(Math.random() * 9000)), uptime: "0m", ram: 80 + Math.floor(Math.random() * 220) }), 2600);
   };
-  const stopService = (id: string) => { setStatus(id, "stopped", { pid: null, uptime: null, ram: null }); showToast("Service stopped."); };
+  const stopService = (id: string) => {
+    showToast("Stopping service...");
+    if (backendActive) {
+      ipcStopService(id).catch((e) => showToast(String(e)));
+      return;
+    }
+    setStatus(id, "stopped", { pid: null, uptime: null, ram: null });
+    showToast("Service stopped.");
+  };
   const restartService = (id: string) => {
     setStatus(id, "starting", { uptime: null, ram: null });
     showToast("Restarting service...");
+    if (backendActive) {
+      ipcRestartService(id).catch((e) => showToast(String(e)));
+      return;
+    }
     setTimeout(() => setStatus(id, "running", { uptime: "0m", ram: 80 + Math.floor(Math.random() * 220) }), 2600);
   };
 
@@ -299,7 +342,7 @@ export default function App() {
               <ProjectPage project={selectedProject} projects={projects} services={services} vaultRoot={vaultRoot} onSelect={setSelectedId} onLaunch={launch} onAction={action} onBrowse={() => goTab("projects")} />
             )}
             {tab === "services" && (
-              <ServicesPage services={services} query={query} onStart={startService} onStop={stopService} onRestart={restartService} onAction={action} onBrowse={() => goTab("projects")} />
+              <ServicesPage services={services} query={query} onStart={startService} onStop={stopService} onRestart={restartService} onAction={action} notify={showToast} onBrowse={() => goTab("projects")} />
             )}
             {tab === "settings" && (
               <SettingsPage config={config} appearance={appearance} onAppearanceChange={updateAppearance} onPatch={patch} />

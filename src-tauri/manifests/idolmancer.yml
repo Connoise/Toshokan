@@ -1,0 +1,19 @@
+# Idolmancer — overlay manifest (PLAN §8). Edit freely; in-repo toshokan.yml wins.
+name: Idolmancer
+launch: pnpm dev
+env: []
+update:
+  remote: origin
+  install: pnpm install
+services:
+  - name: Shell Dev
+    kind: server
+    runtime: Vite
+    command: pnpm dev
+    port: 5173
+  - name: Editor Preview
+    kind: server
+    runtime: Next.js
+    command: pnpm --filter megane dev
+    cwd: idolmancy-Megane
+    port: 3001

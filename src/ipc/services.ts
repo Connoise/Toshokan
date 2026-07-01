@@ -1,37 +1,88 @@
-// C5/C6 — service lifecycle, supervision, and logs.
-import { USE_FIXTURES } from "./index";
+// C5/C6 — service lifecycle, supervision, and logs (Phase 3). Backed by the
+// Rust supervisor inside Tauri; fixtures in a plain browser.
+import { invoke } from "@tauri-apps/api/core";
+import { backendActive } from "./index";
 import { FIXTURE_SERVICES } from "./fixtures";
-import type { Service, ServiceStatusUpdate, LogLine } from "./types";
+import type { Service, ServiceStatusUpdate, LogLine, LogEntry, LogColor } from "./types";
 
 export async function listServices(): Promise<Service[]> {
-  if (USE_FIXTURES) return FIXTURE_SERVICES;
+  if (backendActive) return invoke<Service[]>("list_services");
   return FIXTURE_SERVICES;
 }
 
-export async function startService(_id: string): Promise<void> {
-  // Phase 3+: invoke<void>("start_service", { id })
+export async function startService(id: string): Promise<void> {
+  if (backendActive) return invoke<void>("start_service", { id });
 }
-export async function stopService(_id: string): Promise<void> {
-  // Phase 3+: invoke<void>("stop_service", { id })
+export async function stopService(id: string): Promise<void> {
+  if (backendActive) return invoke<void>("stop_service", { id });
 }
-export async function restartService(_id: string): Promise<void> {
-  // Phase 3+: invoke<void>("restart_service", { id })
+export async function restartService(id: string): Promise<void> {
+  if (backendActive) return invoke<void>("restart_service", { id });
 }
 
-export async function getLog(_id: string): Promise<LogLine[]> {
+export async function getLog(id: string): Promise<LogLine[]> {
+  if (backendActive) return invoke<LogLine[]>("get_log", { id });
   return [];
 }
-export async function saveLog(_id: string): Promise<string> {
+export async function saveLog(id: string): Promise<string> {
+  if (backendActive) return invoke<string>("save_log", { id });
   return "";
 }
-export async function clearLog(_id: string): Promise<void> {}
-
-/** Live status pushes (~1-2s per service). Returns an unsubscribe fn. No-op under fixtures. */
-export function onServiceStatus(_cb: (u: ServiceStatusUpdate) => void): () => void {
-  return () => {};
+export async function clearLog(id: string): Promise<void> {
+  if (backendActive) return invoke<void>("clear_log", { id });
 }
 
-/** Live log lines for the expanded console. Returns an unsubscribe fn. No-op under fixtures. */
-export function onServiceLog(_cb: (line: { id: string; line: LogLine }) => void): () => void {
-  return () => {};
+// ---- events -------------------------------------------------------------------
+
+function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
+  if (!backendActive) return () => {};
+  let unlisten: (() => void) | null = null;
+  let cancelled = false;
+  import("@tauri-apps/api/event").then(({ listen }) => {
+    listen<T>(channel, (e) => cb(e.payload)).then((un) => {
+      if (cancelled) un();
+      else unlisten = un;
+    });
+  });
+  return () => {
+    cancelled = true;
+    if (unlisten) unlisten();
+  };
+}
+
+/** Live status pushes (~1.5s per live service + on every transition). */
+export function onServiceStatus(cb: (u: ServiceStatusUpdate) => void): () => void {
+  return subscribe<ServiceStatusUpdate>("service://status", cb);
+}
+
+/** Live log lines for the expanded console. */
+export function onServiceLog(cb: (e: { id: string; line: LogLine }) => void): () => void {
+  return subscribe<{ id: string; line: LogLine }>("service://log", cb);
+}
+
+// ---- presentation helpers -------------------------------------------------------
+
+const SEVERITY_COLOR: Record<LogLine["severity"], LogColor> = {
+  info: "g",
+  ok: "g",
+  warn: "y",
+  error: "r",
+  plain: "",
+};
+
+/**
+ * Convert a structured LogLine into the console's colored-part tuples. When the
+ * line starts with a short severity token (INFO, npm ERR!, ✓ …) only the token
+ * is tinted, mirroring the prototype's look; otherwise warn/error lines are
+ * tinted whole.
+ */
+export function toLogEntry(l: LogLine): LogEntry {
+  const color = SEVERITY_COLOR[l.severity];
+  if (!color) return [l.ts, [[l.text, ""]]];
+  const space = l.text.indexOf(" ");
+  const token = space > 0 ? l.text.slice(0, space) : "";
+  if (token && token.length <= 12 && /(info|warn|error|err!|✓|ready)/i.test(token)) {
+    return [l.ts, [[token + " ", color], [l.text.slice(space + 1), ""]]];
+  }
+  return [l.ts, [[l.text, l.severity === "error" || l.severity === "warn" ? color : ""]]];
 }
